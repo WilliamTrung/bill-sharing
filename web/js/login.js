@@ -27,7 +27,7 @@
     submit.disabled = true;
     submit.textContent = I18n.t("login.signingIn");
     try {
-      await API.login(value, secret);
+      await API.login({ identifier: value, password: secret });
       window.location.replace("/dashboard.html");
     } catch (err) {
       showError(err.message || I18n.t("login.errFailed"));

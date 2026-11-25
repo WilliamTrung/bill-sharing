@@ -162,6 +162,8 @@ func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", contentType)
 	if strings.HasSuffix(name, ".html") {
 		w.Header().Set("Cache-Control", "no-store")
+	} else if strings.HasSuffix(name, ".js") || strings.HasSuffix(name, ".css") {
+		w.Header().Set("Cache-Control", "no-cache")
 	} else {
 		w.Header().Set("Cache-Control", "public, max-age=3600")
 	}

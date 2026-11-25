@@ -85,7 +85,19 @@ const API = (() => {
     },
 
     login(identifier, password) {
-      return request("POST", "/api/login", { identifier, password });
+      let id = "";
+      let secret = "";
+      if (identifier && typeof identifier === "object") {
+        id = String(identifier.identifier ?? identifier.username ?? identifier.email ?? "").trim();
+        secret = String(identifier.password ?? "");
+      } else {
+        id = String(identifier ?? "").trim();
+        secret = String(password ?? "");
+      }
+      if (!id || !secret) {
+        return Promise.reject(new ApiError(tr("login.errRequired"), 400));
+      }
+      return request("POST", "/api/login", { identifier: id, password: secret });
     },
 
     logout() {
