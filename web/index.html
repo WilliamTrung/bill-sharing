@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title data-i18n="index.docTitle">Dashboard · Bill Sharing</title>
+    <link rel="stylesheet" href="/css/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="shell topbar-inner">
+        <a class="brand" href="/" data-i18n="app.name">Bill Sharing</a>
+        <nav class="nav" data-i18n-aria-label="nav.primary" aria-label="Primary">
+          <a href="/" data-nav data-i18n="nav.bills">Bills</a>
+          <a href="/create-bill.html" data-nav data-i18n="nav.newBill">New bill</a>
+          <a href="/admin.html" data-nav data-i18n="nav.admin">Members &amp; groups</a>
+        </nav>
+        <div class="topbar-actions">
+          <div data-lang-switcher></div>
+          <button class="btn btn-quiet" type="button" data-logout data-i18n="nav.signOut">Sign out</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="shell main">
+      <div class="page-head">
+        <div>
+          <div class="eyebrow" data-i18n="app.eyebrow.overview">Overview</div>
+          <h1 data-i18n="index.heading">Shared expenses</h1>
+          <p class="sub" data-i18n="index.sub">Track who paid, who owes, and every receipt in one place.</p>
+        </div>
+        <div class="head-actions">
+          <a class="btn" href="/create-bill.html" data-i18n="action.addBill">Add bill</a>
+        </div>
+      </div>
+
+      <section class="grid grid-3" id="summary" aria-label="Summary"></section>
+
+      <section class="card" aria-labelledby="balances-title">
+        <div class="card-head">
+          <div>
+            <h2 id="balances-title" data-i18n="index.netBalances">Net balances</h2>
+            <div class="muted" data-i18n="index.netBalancesHint">Positive means this person is owed money overall.</div>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="table" id="balances-table">
+            <thead>
+              <tr>
+                <th data-i18n="index.member">Member</th>
+                <th class="right" data-i18n="index.paid">Paid</th>
+                <th class="right" data-i18n="index.owed">Owed</th>
+                <th class="right" data-i18n="index.net">Net</th>
+              </tr>
+            </thead>
+            <tbody id="balances-body"></tbody>
+          </table>
+        </div>
+        <div class="empty hidden" id="balances-empty" data-i18n="index.noMembers">No members yet. Add members on the Members &amp; groups page.</div>
+      </section>
+
+      <section class="card" aria-labelledby="bills-title">
+        <div class="card-head">
+          <div>
+            <h2 id="bills-title" data-i18n="index.billHistory">Bill history</h2>
+            <div class="muted" data-i18n="index.billHistoryHint">Newest expenses first.</div>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="table" id="bills-table">
+            <thead>
+              <tr>
+                <th data-i18n="index.bill">Bill</th>
+                <th data-i18n="index.date">Date</th>
+                <th data-i18n="index.paidBy">Paid by</th>
+                <th data-i18n="index.split">Split</th>
+                <th class="right" data-i18n="index.amount">Amount</th>
+              </tr>
+            </thead>
+            <tbody id="bills-body"></tbody>
+          </table>
+        </div>
+        <div class="empty hidden" id="bills-empty">
+          <span data-i18n="index.noBills">No bills recorded yet.</span>
+          <a href="/create-bill.html" data-i18n="index.noBillsLink">Add the first one</a>.
+        </div>
+      </section>
+    </main>
+
+    <script src="/js/i18n.js"></script>
+    <script src="/js/api.js"></script>
+    <script src="/js/common.js"></script>
+    <script src="/js/index.js"></script>
+  </body>
+</html>

@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title data-i18n="bill.docTitle">New bill · Bill Sharing</title>
+    <link rel="stylesheet" href="/css/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="shell topbar-inner">
+        <a class="brand" href="/" data-i18n="app.name">Bill Sharing</a>
+        <nav class="nav" data-i18n-aria-label="nav.primary" aria-label="Primary">
+          <a href="/" data-nav data-i18n="nav.bills">Bills</a>
+          <a href="/create-bill.html" data-nav data-i18n="nav.newBill">New bill</a>
+          <a href="/admin.html" data-nav data-i18n="nav.admin">Members &amp; groups</a>
+        </nav>
+        <div class="topbar-actions">
+          <div data-lang-switcher></div>
+          <button class="btn btn-quiet" type="button" data-logout data-i18n="nav.signOut">Sign out</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="shell main">
+      <div class="page-head">
+        <div>
+          <div class="eyebrow" data-i18n="app.eyebrow.newExpense">New expense</div>
+          <h1 data-i18n="bill.heading">Add a bill</h1>
+          <p class="sub" data-i18n="bill.sub">Pick who shares it, choose how to split, and attach the receipts.</p>
+        </div>
+        <div class="head-actions">
+          <a class="btn btn-ghost" href="/" data-i18n="action.cancel">Cancel</a>
+        </div>
+      </div>
+
+      <form id="bill-form" class="grid grid-2" novalidate>
+        <section class="card" aria-labelledby="details-title">
+          <div class="card-head">
+            <h2 id="details-title" data-i18n="bill.details">Bill details</h2>
+          </div>
+          <div class="form">
+            <div class="field">
+              <label for="b-title" data-i18n="bill.title">Title</label>
+              <input id="b-title" name="title" type="text" maxlength="200" required data-i18n-placeholder="bill.titlePlaceholder" placeholder="Dinner at Nha Hang" />
+            </div>
+            <div class="field">
+              <label for="b-description" data-i18n="bill.description">Description</label>
+              <textarea id="b-description" name="description" maxlength="2000" data-i18n-placeholder="bill.descriptionPlaceholder" placeholder="What was this for?"></textarea>
+            </div>
+            <div class="field-row">
+              <div class="field">
+                <label for="b-amount" data-i18n="bill.totalAmount">Total amount</label>
+                <div class="money-input">
+                  <span id="currency-label">$</span>
+                  <input id="b-amount" name="amount" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00" required />
+                </div>
+              </div>
+              <div class="field">
+                <label for="b-date" data-i18n="bill.date">Date</label>
+                <input id="b-date" name="date" type="date" required />
+              </div>
+            </div>
+            <div class="field">
+              <label for="b-payer" data-i18n="bill.paidBy">Paid by</label>
+              <select id="b-payer" name="payer" required>
+                <option value="" data-i18n="bill.payerPlaceholder">Select who paid…</option>
+              </select>
+              <div class="hint" data-i18n="bill.paidByHint">The person who covered the bill upfront.</div>
+            </div>
+            <div class="field">
+              <label data-i18n="bill.splitMode">Split mode</label>
+              <div class="segmented" id="b-split" role="group" aria-label="Split mode">
+                <button type="button" data-mode="EVEN" class="active" data-i18n="bill.even">Even</button>
+                <button type="button" data-mode="RATIO" data-i18n="bill.ratio">Ratio</button>
+              </div>
+            </div>
+            <div class="notice error hidden" id="bill-error" role="alert"></div>
+            <button class="btn btn-block" type="submit" id="bill-submit" data-i18n="bill.saveBill">Save bill</button>
+          </div>
+        </section>
+
+        <section class="card" aria-labelledby="split-preview-title">
+          <div class="card-head">
+            <div>
+              <h2 id="split-preview-title" data-i18n="bill.previewTitle">Live split preview</h2>
+              <div class="muted" data-i18n="bill.previewHint">Updates as you change amounts, weights and selections.</div>
+            </div>
+            <span class="pill" id="preview-status" data-i18n="bill.noParticipants">No participants</span>
+          </div>
+          <div class="preview-table-wrap" id="preview"></div>
+          <div class="preview-total hidden" id="preview-total">
+            <span data-i18n="bill.total">Total</span>
+            <span class="num" id="preview-total-amount"></span>
+          </div>
+          <div class="notice warn hidden" id="preview-warning" style="margin-top: 14px;"></div>
+        </section>
+
+        <section class="card" aria-labelledby="participants-title">
+          <div class="card-head">
+            <div>
+              <h2 id="participants-title" data-i18n="bill.participantsTitle">Participants</h2>
+              <div class="muted" data-i18n="bill.participantsHint">Select people and/or groups. Overlapping selections are disabled.</div>
+            </div>
+          </div>
+          <div class="checkbox-list" id="participants"></div>
+          <div class="empty hidden" id="participants-empty">
+            <span data-i18n="bill.noActiveMembers">No active members yet.</span>
+            <a href="/admin.html" data-i18n="bill.addMembersFirst">Add members first</a>.
+          </div>
+        </section>
+
+        <section class="card" aria-labelledby="evidence-title">
+          <div class="card-head">
+            <div>
+              <h2 id="evidence-title" data-i18n="bill.evidence">Receipts &amp; evidence</h2>
+              <div class="muted" data-i18n="bill.evidenceHint">JPEG, PNG, WebP or PDF. Up to 10 files.</div>
+            </div>
+          </div>
+          <input type="file" id="file-input" accept="image/jpeg,image/png,image/webp,application/pdf" multiple hidden />
+          <div class="dropzone" id="dropzone" tabindex="0" role="button">
+            <div class="strong" data-i18n="bill.dropzone">Drop files here or click to browse</div>
+            <div class="small faint" data-i18n="bill.maxSize">Max 25 MB per bill</div>
+          </div>
+          <div class="thumbs" id="thumbs"></div>
+          <div class="notice error hidden" id="file-error" style="margin-top: 14px;" role="alert"></div>
+        </section>
+      </form>
+    </main>
+
+    <script src="/js/i18n.js"></script>
+    <script src="/js/api.js"></script>
+    <script src="/js/common.js"></script>
+    <script src="/js/splitter-ui.js"></script>
+  </body>
+</html>

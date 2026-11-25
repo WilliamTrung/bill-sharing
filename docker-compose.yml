@@ -1,0 +1,40 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-bills}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-bills}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bills} -d ${POSTGRES_DB:-bills}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PORT: "8080"
+      DATABASE_URL: postgres://${POSTGRES_USER:-bills}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-bills}?sslmode=disable
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD is required}
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required}
+      UPLOAD_DIR: /data/uploads
+      WEB_DIR: /app/web
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-26214400}
+      CURRENCY: ${CURRENCY:-$$}
+    volumes:
+      - uploads:/data/uploads
+    ports:
+      - "${APP_PORT:-8080}:8080"
+
+volumes:
+  db-data:
+  uploads:

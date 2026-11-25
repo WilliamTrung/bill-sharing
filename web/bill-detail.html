@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title data-i18n="detail.docTitle">Bill · Bill Sharing</title>
+    <link rel="stylesheet" href="/css/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="shell topbar-inner">
+        <a class="brand" href="/" data-i18n="app.name">Bill Sharing</a>
+        <nav class="nav" data-i18n-aria-label="nav.primary" aria-label="Primary">
+          <a href="/" data-nav data-i18n="nav.bills">Bills</a>
+          <a href="/create-bill.html" data-nav data-i18n="nav.newBill">New bill</a>
+          <a href="/admin.html" data-nav data-i18n="nav.admin">Members &amp; groups</a>
+        </nav>
+        <div class="topbar-actions">
+          <div data-lang-switcher></div>
+          <button class="btn btn-quiet" type="button" data-logout data-i18n="nav.signOut">Sign out</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="shell main" id="page">
+      <div class="page-head">
+        <div>
+          <div class="eyebrow" data-i18n="detail.heading">Bill details</div>
+          <h1 id="bill-title">…</h1>
+          <p class="sub" id="bill-subtitle" data-i18n="detail.sub">Itemized breakdown and uploaded evidence.</p>
+        </div>
+        <div class="head-actions">
+          <a class="btn btn-ghost" href="/" data-i18n="detail.backToBills">Back to bills</a>
+          <button class="btn btn-danger" type="button" id="delete-bill" data-i18n="detail.deleteBill">Delete bill</button>
+        </div>
+      </div>
+
+      <div class="grid grid-2">
+        <section class="card" aria-labelledby="summary-title">
+          <div class="card-head">
+            <h2 id="summary-title" data-i18n="detail.heading">Bill details</h2>
+          </div>
+          <div class="stack" id="summary-facts"></div>
+        </section>
+
+        <section class="card" aria-labelledby="shares-title">
+          <div class="card-head">
+            <div>
+              <h2 id="shares-title" data-i18n="detail.memberShares">Per-member breakdown</h2>
+              <div class="muted" id="shares-hint"></div>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th data-i18n="index.member">Member</th>
+                  <th data-i18n="detail.direct">Direct</th>
+                  <th class="right" data-i18n="detail.share">Share</th>
+                </tr>
+              </thead>
+              <tbody id="shares-body"></tbody>
+            </table>
+          </div>
+          <div class="preview-total" id="shares-total">
+            <span data-i18n="detail.sumShares">Sum of shares</span>
+            <span class="num" id="shares-total-amount"></span>
+          </div>
+        </section>
+      </div>
+
+      <section class="card" aria-labelledby="participants-title">
+        <div class="card-head">
+          <h2 id="participants-title" data-i18n="detail.participants">Top-level participants</h2>
+        </div>
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th data-i18n="admin.name">Name</th>
+                <th data-i18n="bill.splitMode">Split mode</th>
+                <th class="right" data-i18n="detail.share">Share</th>
+              </tr>
+            </thead>
+            <tbody id="participants-body"></tbody>
+          </table>
+        </div>
+        <div class="empty hidden" id="participants-empty" data-i18n="detail.missing">No participants recorded for this bill.</div>
+      </section>
+
+      <section class="card" aria-labelledby="evidence-title">
+        <div class="card-head">
+          <div>
+            <h2 id="evidence-title" data-i18n="detail.evidence">Evidence</h2>
+            <div class="muted" id="evidence-hint"></div>
+          </div>
+        </div>
+        <div class="gallery" id="gallery"></div>
+        <div class="empty hidden" id="evidence-empty" data-i18n="detail.noEvidence">No receipts attached to this bill.</div>
+      </section>
+    </main>
+
+    <div class="lightbox" id="lightbox" role="dialog" aria-modal="true">
+      <button class="lb-close" type="button" id="lightbox-close" aria-label="Close" data-i18n-aria-label="action.close">&times;</button>
+      <div id="lightbox-content"></div>
+    </div>
+
+    <script src="/js/i18n.js"></script>
+    <script src="/js/api.js"></script>
+    <script src="/js/common.js"></script>
+    <script src="/js/bill-detail.js"></script>
+  </body>
+</html>

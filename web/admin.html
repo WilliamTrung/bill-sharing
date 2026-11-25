@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title data-i18n="admin.docTitle">Members &amp; groups · Bill Sharing</title>
+    <link rel="stylesheet" href="/css/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="shell topbar-inner">
+        <a class="brand" href="/" data-i18n="app.name">Bill Sharing</a>
+        <nav class="nav" data-i18n-aria-label="nav.primary" aria-label="Primary">
+          <a href="/" data-nav data-i18n="nav.bills">Bills</a>
+          <a href="/create-bill.html" data-nav data-i18n="nav.newBill">New bill</a>
+          <a href="/admin.html" data-nav data-i18n="nav.admin">Members &amp; groups</a>
+        </nav>
+        <div class="topbar-actions">
+          <div data-lang-switcher></div>
+          <button class="btn btn-quiet" type="button" data-logout data-i18n="nav.signOut">Sign out</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="shell main">
+      <div class="page-head">
+        <div>
+          <div class="eyebrow" data-i18n="app.eyebrow.admin">Admin</div>
+          <h1 data-i18n="admin.heading">Members &amp; groups</h1>
+          <p class="sub" data-i18n="admin.sub">People who share expenses, and the composite groups they form.</p>
+        </div>
+        <div class="head-actions">
+          <button class="btn" type="button" id="add-member" data-i18n="action.addMember">Add member</button>
+        </div>
+      </div>
+
+      <section class="card" aria-labelledby="members-title">
+        <div class="card-head">
+          <div>
+            <h2 id="members-title" data-i18n="admin.members">Members</h2>
+            <div class="muted" data-i18n="admin.membersHint">Deactivating a member keeps their past bills intact.</div>
+          </div>
+          <label class="inline small faint">
+            <input type="checkbox" id="show-inactive" checked />
+            <span data-i18n="admin.showInactive">Show inactive</span>
+          </label>
+        </div>
+        <div class="table-wrap">
+          <table class="table" id="members-table">
+            <thead>
+              <tr>
+                <th data-i18n="admin.name">Name</th>
+                <th data-i18n="admin.contact">Contact</th>
+                <th data-i18n="admin.groups">Groups</th>
+                <th class="right" data-i18n="admin.actions">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="members-body"></tbody>
+          </table>
+        </div>
+        <div class="empty hidden" id="members-empty" data-i18n="admin.noMembers">No members yet. Add the first person above.</div>
+      </section>
+
+      <section class="card" aria-labelledby="groups-title">
+        <div class="card-head">
+          <div>
+            <h2 id="groups-title" data-i18n="admin.groupsTitle">Groups</h2>
+            <div class="muted" data-i18n="admin.groupsHint">A group acts as a single participant on bills.</div>
+          </div>
+          <button class="btn btn-ghost btn-sm" type="button" id="add-group" data-i18n="action.newGroup">New group</button>
+        </div>
+        <div class="grid grid-auto" id="groups-grid"></div>
+        <div class="empty hidden" id="groups-empty" data-i18n="admin.noGroups">No groups yet. Create one to split bills between couples or families.</div>
+      </section>
+    </main>
+
+    <div class="backdrop" id="backdrop"></div>
+
+    <aside class="drawer" id="member-drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
+      <div class="drawer-head">
+        <div>
+          <div class="eyebrow" data-i18n="admin.member">Member</div>
+          <h2 id="drawer-title">Details</h2>
+        </div>
+        <button class="icon-btn" type="button" data-close-drawer aria-label="Close" data-i18n-aria-label="action.close">&times;</button>
+      </div>
+      <div class="drawer-body" id="drawer-body"></div>
+      <div class="drawer-foot">
+        <button class="btn btn-ghost" type="button" data-close-drawer data-i18n="action.close">Close</button>
+        <button class="btn" type="button" id="drawer-create-group" data-i18n="admin.createGroupWith">Create group with this member</button>
+      </div>
+    </aside>
+
+    <div class="modal" id="member-modal" role="dialog" aria-modal="true" aria-labelledby="member-modal-title">
+      <div class="modal-card">
+        <div class="modal-head">
+          <h2 id="member-modal-title">Add member</h2>
+          <button class="icon-btn" type="button" data-close-modal aria-label="Close" data-i18n-aria-label="action.close">&times;</button>
+        </div>
+        <form class="modal-body form" id="member-form" novalidate>
+          <div class="field-row">
+            <div class="field">
+              <label for="m-name" data-i18n="admin.name">Name</label>
+              <input id="m-name" name="name" type="text" maxlength="120" required />
+            </div>
+            <div class="field">
+              <label for="m-phone" data-i18n="admin.phone">Phone</label>
+              <input id="m-phone" name="phone" type="text" maxlength="40" />
+            </div>
+          </div>
+          <div class="field">
+            <label for="m-email" data-i18n="admin.email">Email</label>
+            <input id="m-email" name="email" type="email" maxlength="200" />
+          </div>
+          <div class="field">
+            <label for="m-notes" data-i18n="admin.notes">Notes</label>
+            <textarea id="m-notes" name="notes" maxlength="2000"></textarea>
+          </div>
+          <label class="inline small">
+            <input type="checkbox" id="m-active" checked />
+            <span data-i18n="admin.activate">Active</span>
+          </label>
+          <div class="notice error hidden" id="member-form-error" role="alert"></div>
+        </form>
+        <div class="modal-foot">
+          <button class="btn btn-ghost" type="button" data-close-modal data-i18n="action.cancel">Cancel</button>
+          <button class="btn" type="button" id="member-save" data-i18n="admin.saveMember">Save member</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal" id="group-modal" role="dialog" aria-modal="true" aria-labelledby="group-modal-title">
+      <div class="modal-card">
+        <div class="modal-head">
+          <h2 id="group-modal-title">New group</h2>
+          <button class="icon-btn" type="button" data-close-group-modal aria-label="Close" data-i18n-aria-label="action.close">&times;</button>
+        </div>
+        <form class="modal-body form" id="group-form" novalidate>
+          <div class="field">
+            <label for="g-name" data-i18n="admin.groupName">Group name</label>
+            <input id="g-name" name="name" type="text" maxlength="120" required data-i18n-placeholder="admin.groupNamePlaceholder" placeholder="e.g. Alex &amp; Sam" />
+          </div>
+          <div class="field">
+            <label data-i18n="admin.internalSplit">Internal split</label>
+            <div class="segmented" id="g-split" role="group" aria-label="Internal split type">
+              <button type="button" data-split="EVEN" class="active" data-i18n="admin.splitEven">Even</button>
+              <button type="button" data-split="RATIO" data-i18n="admin.splitRatio">Ratio</button>
+            </div>
+            <div class="hint" data-i18n="admin.internalSplitHint">How this group's share is divided among its own members.</div>
+          </div>
+          <div class="field">
+            <label data-i18n="admin.membersLabel">Members</label>
+            <div class="checkbox-list" id="g-members"></div>
+            <div class="hint" data-i18n="admin.pickTwo">Pick at least two active members.</div>
+          </div>
+          <label class="inline small">
+            <input type="checkbox" id="g-active" checked />
+            <span data-i18n="admin.activate">Active</span>
+          </label>
+          <div class="notice error hidden" id="group-form-error" role="alert"></div>
+        </form>
+        <div class="modal-foot">
+          <button class="btn btn-ghost" type="button" data-close-group-modal data-i18n="action.cancel">Cancel</button>
+          <button class="btn" type="button" id="group-save" data-i18n="admin.saveGroup">Save group</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="/js/i18n.js"></script>
+    <script src="/js/api.js"></script>
+    <script src="/js/common.js"></script>
+    <script src="/js/admin-ui.js"></script>
+  </body>
+</html>

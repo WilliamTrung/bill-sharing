@@ -1,0 +1,166 @@
+package handlers
+
+import (
+	"io/fs"
+	"log/slog"
+	"mime"
+	"net/http"
+	"path"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/WilliamTrung/bill-sharing/internal/auth"
+	"github.com/WilliamTrung/bill-sharing/internal/config"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+type Server struct {
+	cfg     config.Config
+	db      *pgxpool.Pool
+	auth    *auth.Manager
+	logger  *slog.Logger
+	webFS   fs.FS
+	mux     *http.ServeMux
+	limiter *loginLimiter
+}
+
+func New(cfg config.Config, db *pgxpool.Pool, logger *slog.Logger, webFS fs.FS) *Server {
+	s := &Server{
+		cfg:     cfg,
+		db:      db,
+		auth:    auth.New(cfg.SessionSecret, cfg.SessionTTL),
+		logger:  logger,
+		webFS:   webFS,
+		mux:     http.NewServeMux(),
+		limiter: newLoginLimiter(8, 10*time.Minute),
+	}
+	s.routes()
+	return s
+}
+
+func (s *Server) Handler() http.Handler {
+	return s.securityHeaders(s.logRequests(s.mux))
+}
+
+func (s *Server) routes() {
+	s.mux.HandleFunc("GET /healthz", s.handleHealth)
+
+	s.mux.HandleFunc("POST /api/login", s.handleLogin)
+	s.mux.Handle("POST /api/logout", s.requireAuth(http.HandlerFunc(s.handleLogout)))
+	s.mux.Handle("GET /api/session", s.requireAuth(http.HandlerFunc(s.handleSession)))
+	s.mux.Handle("GET /api/config", s.requireAuth(http.HandlerFunc(s.handleConfig)))
+
+	s.mux.Handle("GET /api/members", s.requireAuth(http.HandlerFunc(s.handleListMembers)))
+	s.mux.Handle("POST /api/members", s.requireAuth(http.HandlerFunc(s.handleCreateMember)))
+	s.mux.Handle("GET /api/members/{id}", s.requireAuth(http.HandlerFunc(s.handleGetMember)))
+	s.mux.Handle("PUT /api/members/{id}", s.requireAuth(http.HandlerFunc(s.handleUpdateMember)))
+
+	s.mux.Handle("GET /api/groups", s.requireAuth(http.HandlerFunc(s.handleListGroups)))
+	s.mux.Handle("POST /api/groups", s.requireAuth(http.HandlerFunc(s.handleCreateGroup)))
+	s.mux.Handle("GET /api/groups/{id}", s.requireAuth(http.HandlerFunc(s.handleGetGroup)))
+	s.mux.Handle("PUT /api/groups/{id}", s.requireAuth(http.HandlerFunc(s.handleUpdateGroup)))
+
+	s.mux.Handle("GET /api/bills", s.requireAuth(http.HandlerFunc(s.handleListBills)))
+	s.mux.Handle("POST /api/bills", s.requireAuth(http.HandlerFunc(s.handleCreateBill)))
+	s.mux.Handle("GET /api/bills/{id}", s.requireAuth(http.HandlerFunc(s.handleGetBill)))
+	s.mux.Handle("DELETE /api/bills/{id}", s.requireAuth(http.HandlerFunc(s.handleDeleteBill)))
+
+	s.mux.Handle("GET /api/balances", s.requireAuth(http.HandlerFunc(s.handleBalances)))
+
+	s.mux.Handle("GET /uploads/{billID}/{filename}", s.requireAuth(http.HandlerFunc(s.handleUploadedFile)))
+
+	s.mux.HandleFunc("GET /", s.handleStatic)
+}
+
+func (s *Server) requireAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !s.auth.RequestValid(r) {
+			writeError(w, http.StatusUnauthorized, "Authentication required")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
+	name := strings.TrimPrefix(path.Clean("/"+r.URL.Path), "/")
+	if name == "" {
+		name = "index.html"
+	}
+	if strings.HasSuffix(name, "/") {
+		http.NotFound(w, r)
+		return
+	}
+
+	if (name == "index.html" || strings.HasSuffix(name, ".html")) && name != "login.html" {
+		if !s.auth.RequestValid(r) {
+			http.Redirect(w, r, "/login.html", http.StatusFound)
+			return
+		}
+	}
+
+	data, err := fs.ReadFile(s.webFS, name)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	contentType := mime.TypeByExtension(filepath.Ext(name))
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	if strings.HasPrefix(contentType, "text/") || strings.HasPrefix(contentType, "application/javascript") {
+		contentType += "; charset=utf-8"
+	}
+	w.Header().Set("Content-Type", contentType)
+	if strings.HasSuffix(name, ".html") {
+		w.Header().Set("Cache-Control", "no-store")
+	} else {
+		w.Header().Set("Cache-Control", "public, max-age=3600")
+	}
+	w.WriteHeader(http.StatusOK)
+	if r.Method != http.MethodHead {
+		_, _ = w.Write(data)
+	}
+}
+
+func (s *Server) securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("Content-Security-Policy",
+			"default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; "+
+				"script-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
+		next.ServeHTTP(w, r)
+	})
+}
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (r *statusRecorder) WriteHeader(status int) {
+	r.status = status
+	r.ResponseWriter.WriteHeader(status)
+}
+
+func (s *Server) logRequests(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		started := time.Now()
+		recorder := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(recorder, r)
+		s.logger.Info("request",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"status", recorder.status,
+			"duration_ms", time.Since(started).Milliseconds(),
+		)
+	})
+}
