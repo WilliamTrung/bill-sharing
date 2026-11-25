@@ -97,6 +97,7 @@ const Chrome = (() => {
     markActiveNav();
     mountNavToggle();
     wireLogout();
+    Icons.apply();
     if (opts.onReady) {
       try {
         await opts.onReady();
@@ -135,6 +136,79 @@ const Rows = (() => {
   }
 
   return { apply, makeClickable };
+})();
+
+const Icons = (() => {
+  // 24x24 stroke icons; they inherit currentColor so they work on any button.
+  const paths = {
+    plus: '<path d="M12 5v14M5 12h14"/>',
+    users:
+      '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>' +
+      '<path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>',
+    user: '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+    mail: '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/>',
+    edit: '<path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>',
+    check: '<path d="M20 6 9 17l-5-5"/>',
+    "check-circle": '<circle cx="12" cy="12" r="9"/><path d="m8.5 12.5 2.5 2.5 4.5-5"/>',
+    x: '<path d="M18 6 6 18M6 6l12 12"/>',
+    trash: '<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/>',
+    "arrow-left": '<path d="M19 12H5M12 19l-7-7 7-7"/>',
+    "log-out": '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5M21 12H9"/>',
+    "log-in": '<path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="m10 17 5-5-5-5M15 12H3"/>',
+    save: '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M17 21v-8H7v8M7 3v5h8"/>',
+    key: '<circle cx="7.5" cy="15.5" r="4.5"/><path d="m10.7 12.3 8.3-8.3M17 6l2 2M14 9l2 2"/>',
+    eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',
+    settings:
+      '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/>',
+    undo: '<path d="M3 7v6h6"/><path d="M3 13a9 9 0 1 0 3-7.7L3 8"/>',
+    search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
+    "chevron-right": '<path d="m9 18 6-6-6-6"/>',
+  };
+
+  function svg(name, size) {
+    const body = paths[name];
+    if (!body) return null;
+    const el = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    el.setAttribute("viewBox", "0 0 24 24");
+    el.setAttribute("width", String(size || 16));
+    el.setAttribute("height", String(size || 16));
+    el.setAttribute("fill", "none");
+    el.setAttribute("stroke", "currentColor");
+    el.setAttribute("stroke-width", "2");
+    el.setAttribute("stroke-linecap", "round");
+    el.setAttribute("stroke-linejoin", "round");
+    el.setAttribute("aria-hidden", "true");
+    el.setAttribute("focusable", "false");
+    el.innerHTML = body;
+    return el;
+  }
+
+  // Decorate every [data-icon] element with its icon, keeping the label text.
+  function apply(root) {
+    (root || document).querySelectorAll("[data-icon]").forEach((node) => {
+      if (node.dataset.iconReady === "true") return;
+      const icon = svg(node.dataset.icon);
+      if (!icon) return;
+      node.dataset.iconReady = "true";
+      node.classList.add("has-icon");
+      node.insertBefore(icon, node.firstChild);
+    });
+  }
+
+  // setLabel swaps a button's text without discarding the icon Icons.apply added.
+  function setLabel(node, text) {
+    const label = node.querySelector("[data-label]");
+    if (label) {
+      label.textContent = text;
+      return;
+    }
+    const icon = node.querySelector("svg");
+    node.replaceChildren();
+    if (icon) node.appendChild(icon);
+    node.appendChild(document.createTextNode(text));
+  }
+
+  return { svg, apply, setLabel };
 })();
 
 const Shares = (() => {

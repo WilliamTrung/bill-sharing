@@ -45,13 +45,13 @@
   function sendInvite(member, button) {
     button.disabled = true;
     const label = button.textContent;
-    button.textContent = I18n.t("admin.inviteSending");
+    Icons.setLabel(button, I18n.t("admin.inviteSending"));
     API.sendInvite(member.id)
       .then(() => UI.toast(I18n.t("admin.inviteSent"), "success"))
       .catch((err) => UI.toast(UI.errorMessage(err), "error"))
       .finally(() => {
         button.disabled = false;
-        button.textContent = label;
+        Icons.setLabel(button, label);
       });
   }
 
@@ -101,22 +101,26 @@
       const actionsWrap = UI.el("div", "member-row-actions");
       const detailBtn = UI.el("button", "btn btn-quiet btn-sm", I18n.t("action.details"));
       detailBtn.type = "button";
+      detailBtn.dataset.icon = "eye";
       detailBtn.addEventListener("click", () => openDrawer(member.id));
       actionsWrap.appendChild(detailBtn);
       const editBtn = UI.el("button", "btn btn-quiet btn-sm", I18n.t("action.edit"));
       editBtn.type = "button";
+      editBtn.dataset.icon = "edit";
       editBtn.addEventListener("click", () => openMemberModal(member));
       actionsWrap.appendChild(editBtn);
 
       if (canInvite(member)) {
         const inviteBtn = UI.el("button", "btn btn-ghost btn-sm", I18n.t("admin.resendInvite"));
         inviteBtn.type = "button";
+        inviteBtn.dataset.icon = "mail";
         inviteBtn.title = I18n.t("admin.resendInviteHint");
         inviteBtn.addEventListener("click", () => sendInvite(member, inviteBtn));
         actionsWrap.appendChild(inviteBtn);
       }
 
       if (!state.isAdmin) actionsWrap.replaceChildren();
+      Icons.apply(actionsWrap);
       actions.appendChild(actionsWrap);
       row.appendChild(actions);
 
@@ -151,8 +155,12 @@
 
       const editBtn = UI.el("button", "btn btn-quiet btn-sm", I18n.t("action.edit"));
       editBtn.type = "button";
+      editBtn.dataset.icon = "edit";
       editBtn.addEventListener("click", () => openGroupModal(group));
-      if (state.isAdmin) head.appendChild(editBtn);
+      if (state.isAdmin) {
+        Icons.apply(editBtn);
+        head.appendChild(editBtn);
+      }
       card.appendChild(head);
 
       const membersWrap = UI.el("div", "members");

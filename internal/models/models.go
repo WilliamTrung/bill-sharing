@@ -123,6 +123,7 @@ type Balance struct {
 	MemberID  int64  `json:"member_id"`
 	Name      string `json:"name"`
 	IsActive  bool   `json:"is_active"`
+	IsSelf    bool   `json:"is_self"`
 	PaidCents int64  `json:"paid_cents"`
 	OwedCents int64  `json:"owed_cents"`
 	NetCents  int64  `json:"net_cents"`

@@ -776,6 +776,28 @@ func (s *Server) handleUpdateShareSettled(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// Only the person who paid the bill may confirm a member's share is settled.
+	viewerID, ok := s.auth.RequestUser(r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "Authentication required")
+		return
+	}
+	var payerID int64
+	err := s.db.QueryRow(r.Context(), `SELECT paid_by_member_id FROM bills WHERE id = $1`, billID).Scan(&payerID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeError(w, http.StatusNotFound, "Bill not found")
+		return
+	}
+	if err != nil {
+		s.logger.Error("load bill payer", "error", err)
+		writeError(w, http.StatusInternalServerError, "Could not update share")
+		return
+	}
+	if payerID != viewerID && !s.requestIsAdmin(r) {
+		writeError(w, http.StatusForbidden, "Only the payer can settle a share")
+		return
+	}
+
 	tag, err := s.db.Exec(r.Context(), `
 		UPDATE bill_member_shares SET is_settled = $1
 		WHERE id = $2 AND bill_id = $3`, *body.Settled, shareID, billID)
@@ -935,8 +957,12 @@ func (s *Server) handleDeleteBill(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleBalances(w http.ResponseWriter, r *http.Request) {
+	// The caller's own row is flagged rather than dropped: the dashboard hides it
+	// from the list but still needs it for the summary counts.
+	viewerID, _ := s.auth.RequestUser(r)
+
 	rows, err := s.db.Query(r.Context(), `
-		SELECT m.id, `+userLabelSQLM+`, m.is_active,
+		SELECT m.id, `+userLabelSQLM+`, m.is_active, (m.id = $1) AS is_self,
 		       COALESCE(p.total, 0)::bigint,
 		       COALESCE(s.total, 0)::bigint,
 		       (COALESCE(p.total, 0) - COALESCE(s.total, 0))::bigint
@@ -949,7 +975,7 @@ func (s *Server) handleBalances(w http.ResponseWriter, r *http.Request) {
 			SELECT member_id, SUM(owed_amount_cents) AS total
 			FROM bill_member_shares GROUP BY member_id
 		) s ON s.member_id = m.id
-		ORDER BY `+userLabelSQLM+` ASC`)
+		ORDER BY `+userLabelSQLM+` ASC`, viewerID)
 	if err != nil {
 		s.logger.Error("load balances", "error", err)
 		writeError(w, http.StatusInternalServerError, "Could not load balances")
@@ -960,7 +986,8 @@ func (s *Server) handleBalances(w http.ResponseWriter, r *http.Request) {
 	balances := make([]models.Balance, 0)
 	for rows.Next() {
 		var b models.Balance
-		if err := rows.Scan(&b.MemberID, &b.Name, &b.IsActive, &b.PaidCents, &b.OwedCents, &b.NetCents); err != nil {
+		if err := rows.Scan(&b.MemberID, &b.Name, &b.IsActive, &b.IsSelf,
+			&b.PaidCents, &b.OwedCents, &b.NetCents); err != nil {
 			writeError(w, http.StatusInternalServerError, "Could not load balances")
 			return
 		}

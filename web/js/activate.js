@@ -20,6 +20,7 @@
   }
 
   API.getCurrency().catch(() => {});
+  Icons.apply();
 
   if (!token) {
     disable(I18n.t("activate.missingToken"));
@@ -51,7 +52,7 @@
     }
 
     submit.disabled = true;
-    submit.textContent = I18n.t("activate.activating");
+    Icons.setLabel(submit, I18n.t("activate.activating"));
     try {
       await API.acceptInvite(token, value);
       form.hidden = true;
@@ -62,7 +63,7 @@
     } catch (err) {
       showError(UI.errorMessage(err));
       submit.disabled = false;
-      submit.textContent = I18n.t("activate.submit");
+      Icons.setLabel(submit, I18n.t("activate.submit"));
     }
   });
 })();

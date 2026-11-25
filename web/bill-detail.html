@@ -17,8 +17,8 @@
         </nav>
         <div class="topbar-actions">
           <div data-lang-switcher></div>
-          <a class="btn btn-quiet hidden" id="sign-in-link" href="/login.html" data-i18n="home.signIn">Sign in</a>
-          <button class="btn btn-quiet hidden" type="button" data-logout data-i18n="nav.signOut">Sign out</button>
+          <a class="btn btn-quiet hidden" id="sign-in-link" href="/login.html" data-icon="log-in" data-i18n="home.signIn">Sign in</a>
+          <button class="btn btn-quiet hidden" type="button" data-logout data-icon="log-out" data-i18n="nav.signOut">Sign out</button>
         </div>
       </div>
     </header>
@@ -31,9 +31,9 @@
           <p class="sub" id="bill-subtitle" data-i18n="detail.sub">Itemized breakdown and uploaded evidence.</p>
         </div>
         <div class="head-actions">
-          <a class="btn btn-ghost" href="/dashboard.html" data-i18n="detail.backToBills">Back to bills</a>
-          <button class="btn btn-quiet hidden" type="button" id="toggle-status" data-i18n="detail.markSettled">Mark settled</button>
-          <button class="btn btn-danger hidden" type="button" id="delete-bill" data-i18n="detail.deleteBill">Delete bill</button>
+          <a class="btn btn-ghost" href="/dashboard.html" data-icon="arrow-left" data-i18n="detail.backToBills">Back to bills</a>
+          <button class="btn btn-quiet hidden" type="button" id="toggle-status" data-icon="check-circle"><span data-label data-i18n="detail.markSettled">Mark settled</span></button>
+          <button class="btn btn-danger hidden" type="button" id="delete-bill" data-icon="trash" data-i18n="detail.deleteBill">Delete bill</button>
         </div>
       </div>
 
@@ -72,9 +72,9 @@
         </section>
       </div>
 
-      <section class="card" aria-labelledby="participants-title">
+      <section class="card participants-card" aria-labelledby="participants-title">
         <div class="card-head">
-          <h2 id="participants-title" data-i18n="detail.participants">Top-level participants</h2>
+          <h2 id="participants-title" data-i18n="detail.participants">Participants</h2>
         </div>
         <div class="table-wrap">
           <table class="table">

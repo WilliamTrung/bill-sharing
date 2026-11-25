@@ -20,7 +20,13 @@
   const lightbox = document.getElementById("lightbox");
   const lightboxContent = document.getElementById("lightbox-content");
 
-  const state = { authenticated: false };
+  const state = { authenticated: false, userId: null, isAdmin: false };
+
+  // Only the member who paid the bill may confirm shares; admins may too.
+  function canSettleShares() {
+    if (!state.authenticated || !cache.bill) return false;
+    return state.isAdmin || cache.bill.paid_by_member_id === state.userId;
+  }
 
   function factRow(label, value) {
     const row = UI.el("div", "spread");
@@ -76,7 +82,11 @@
 
     toggleBtn.classList.toggle("hidden", !state.authenticated);
     deleteBtn.classList.toggle("hidden", !state.authenticated);
-    toggleBtn.textContent = I18n.t(settled ? "detail.markOpen" : "detail.markSettled");
+    // Update the label span only, so the icon inserted by Icons.apply survives.
+    const toggleLabel = toggleBtn.querySelector("[data-label]");
+    const toggleText = I18n.t(settled ? "detail.markOpen" : "detail.markSettled");
+    if (toggleLabel) toggleLabel.textContent = toggleText;
+    else toggleBtn.textContent = toggleText;
   }
 
   function renderParticipants() {
@@ -151,10 +161,11 @@
       row.appendChild(UI.el("td", "right num strong", Money.format(share.owed_amount_cents)));
       total += BigInt(share.owed_amount_cents);
 
-      // Per-share settle control, only meaningful for signed-in users.
+      // Per-share settle control. Only the bill's payer (or an admin) confirms it,
+      // and each member is settled on its own.
       const actionCell = document.createElement("td");
       actionCell.className = "right";
-      if (state.authenticated) {
+      if (canSettleShares()) {
         const settled = share.is_settled === true;
         const pill = UI.el(
           "span",
@@ -163,11 +174,15 @@
         );
         const button = UI.el("button", "btn btn-quiet btn-sm", I18n.t(settled ? "detail.shareMarkOpen" : "detail.shareMarkSettled"));
         button.type = "button";
+        button.dataset.icon = settled ? "undo" : "check";
         button.addEventListener("click", () => toggleShareSettled(share, button));
         const wrap = UI.el("div", "inline");
         wrap.appendChild(pill);
         wrap.appendChild(button);
+        Icons.apply(wrap);
         actionCell.appendChild(wrap);
+      } else if (share.is_settled === true) {
+        actionCell.appendChild(UI.el("span", "pill pill-accent", I18n.t("detail.shareSettled")));
       }
       row.appendChild(actionCell);
 
@@ -253,6 +268,12 @@
 
   async function toggleShareSettled(share, button) {
     const next = share.is_settled !== true;
+    if (next) {
+      const confirmed = window.confirm(
+        I18n.t("detail.confirmSettle", { name: share.member_name, amount: Money.format(share.owed_amount_cents) })
+      );
+      if (!confirmed) return;
+    }
     button.disabled = true;
     try {
       const result = await API.updateShareSettled(cache.bill.id, share.id, next);
@@ -316,7 +337,10 @@
         window.location.replace("/");
         return;
       }
-      state.authenticated = (await API.currentSession()) !== null;
+      const session = await API.currentSession();
+      state.authenticated = session !== null;
+      state.userId = session && session.user ? session.user.id : null;
+      state.isAdmin = Boolean(session && session.is_admin);
       try {
         cache.bill = await API.publicBill(billId);
       } catch (err) {

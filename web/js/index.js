@@ -53,13 +53,15 @@
 
   function renderBalances(balances) {
     balancesBody.replaceChildren();
-    if (balances.length === 0) {
+    // Your own row is not listed; the summary above still counts everyone.
+    const others = balances.filter((b) => b.is_self !== true);
+    if (others.length === 0) {
       balancesEmpty.classList.remove("hidden");
       return;
     }
     balancesEmpty.classList.add("hidden");
 
-    for (const balance of balances) {
+    for (const balance of others) {
       const row = document.createElement("tr");
 
       const memberCell = document.createElement("td");

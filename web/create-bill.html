@@ -18,7 +18,7 @@
         </nav>
         <div class="topbar-actions">
           <div data-lang-switcher></div>
-          <button class="btn btn-quiet" type="button" data-logout data-i18n="nav.signOut">Sign out</button>
+          <button class="btn btn-quiet" type="button" data-logout data-icon="log-out" data-i18n="nav.signOut">Sign out</button>
         </div>
       </div>
     </header>
@@ -31,7 +31,7 @@
           <p class="sub" data-i18n="bill.sub">Pick who shares it, choose how to split, and attach the receipts.</p>
         </div>
         <div class="head-actions">
-          <a class="btn btn-ghost" href="/dashboard.html" data-i18n="action.cancel">Cancel</a>
+          <a class="btn btn-ghost" href="/dashboard.html" data-icon="x" data-i18n="action.cancel">Cancel</a>
         </div>
       </div>
 
@@ -81,7 +81,7 @@
               </div>
             </div>
             <div class="notice error hidden" id="bill-error" role="alert"></div>
-            <button class="btn btn-block" type="submit" id="bill-submit" data-i18n="bill.saveBill">Save bill</button>
+            <button class="btn btn-block" type="submit" id="bill-submit" data-icon="check" data-i18n="bill.saveBill">Save bill</button>
           </div>
         </section>
 
@@ -108,15 +108,22 @@
               <div class="muted" data-i18n="bill.participantsHint">Select people and/or groups. Overlapping selections are disabled.</div>
             </div>
           </div>
-          <div class="field">
-            <label for="participant-search" class="sr-only" data-i18n="bill.searchParticipants">Search participants</label>
-            <input
-              id="participant-search"
-              type="search"
-              autocomplete="off"
-              data-i18n-placeholder="bill.searchPlaceholder"
-              placeholder="Search by name"
-            />
+          <div class="participant-toolbar">
+            <div class="field">
+              <label for="participant-search" class="sr-only" data-i18n="bill.searchParticipants">Search participants</label>
+              <input
+                id="participant-search"
+                type="search"
+                autocomplete="off"
+                data-i18n-placeholder="bill.searchPlaceholder"
+                placeholder="Search by name"
+              />
+            </div>
+            <div class="segmented" id="participant-kind" role="group" aria-label="Participant type">
+              <button type="button" data-kind="ALL" class="active" data-i18n="bill.kindAll">All</button>
+              <button type="button" data-kind="MEMBER" data-i18n="bill.kindPeople">People</button>
+              <button type="button" data-kind="GROUP" data-i18n="bill.kindGroups">Groups</button>
+            </div>
           </div>
           <div class="checkbox-list" id="participants"></div>
           <div class="empty hidden" id="participants-empty">
@@ -168,7 +175,7 @@
           <div class="empty hidden" id="payer-empty" data-i18n="bill.payerNoMatches">No matching people.</div>
         </div>
         <div class="modal-foot">
-          <button class="btn btn-ghost" type="button" id="payer-cancel" data-i18n="action.cancel">Cancel</button>
+          <button class="btn btn-ghost" type="button" id="payer-cancel" data-icon="x" data-i18n="action.cancel">Cancel</button>
         </div>
       </div>
     </div>

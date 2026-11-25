@@ -6,6 +6,7 @@
   const errorBox = document.getElementById("login-error");
 
   API.getCurrency().catch(() => {});
+  Icons.apply();
 
   function showError(message) {
     errorBox.textContent = message;
@@ -25,7 +26,7 @@
     }
 
     submit.disabled = true;
-    submit.textContent = I18n.t("login.signingIn");
+    Icons.setLabel(submit, I18n.t("login.signingIn"));
     try {
       await API.login({ identifier: value, password: secret });
       window.location.replace("/dashboard.html");
@@ -34,7 +35,7 @@
       password.select();
     } finally {
       submit.disabled = false;
-      submit.textContent = I18n.t("login.submit");
+      Icons.setLabel(submit, I18n.t("login.submit"));
     }
   });
 })();

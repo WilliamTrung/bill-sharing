@@ -18,7 +18,7 @@
         </nav>
         <div class="topbar-actions">
           <div data-lang-switcher></div>
-          <button class="btn btn-quiet" type="button" data-logout data-i18n="nav.signOut">Sign out</button>
+          <button class="btn btn-quiet" type="button" data-logout data-icon="log-out" data-i18n="nav.signOut">Sign out</button>
         </div>
       </div>
     </header>
@@ -31,7 +31,7 @@
           <p class="sub" data-i18n="admin.sub">People who share expenses, and the composite groups they form.</p>
         </div>
         <div class="head-actions">
-          <button class="btn" type="button" id="add-member" data-admin-only data-i18n="action.addMember">Add member</button>
+          <button class="btn" type="button" id="add-member" data-admin-only data-icon="plus" data-i18n="action.addMember">Add member</button>
         </div>
       </div>
 
@@ -68,7 +68,7 @@
             <h2 id="groups-title" data-i18n="admin.groupsTitle">Groups</h2>
             <div class="muted" data-i18n="admin.groupsHint">A group acts as a single participant on bills.</div>
           </div>
-          <button class="btn btn-ghost btn-sm" type="button" id="add-group" data-admin-only data-i18n="action.newGroup">New group</button>
+          <button class="btn btn-ghost btn-sm" type="button" id="add-group" data-admin-only data-icon="users" data-i18n="action.newGroup">New group</button>
         </div>
         <div class="grid grid-auto" id="groups-grid"></div>
         <div class="empty hidden" id="groups-empty" data-i18n="admin.noGroups">No groups yet. Create one to split bills between couples or families.</div>
@@ -87,9 +87,9 @@
       </div>
       <div class="drawer-body" id="drawer-body"></div>
       <div class="drawer-foot">
-        <button class="btn btn-ghost" type="button" data-close-drawer data-i18n="action.close">Close</button>
-        <button class="btn btn-ghost hidden" type="button" id="drawer-resend-invite" data-i18n="admin.resendInvite">Resend invite</button>
-        <button class="btn" type="button" id="drawer-create-group" data-i18n="admin.createGroupWith">Create group with this member</button>
+        <button class="btn btn-ghost" type="button" data-close-drawer data-icon="x" data-i18n="action.close">Close</button>
+        <button class="btn btn-ghost hidden" type="button" id="drawer-resend-invite" data-icon="mail" data-i18n="admin.resendInvite">Resend invite</button>
+        <button class="btn" type="button" id="drawer-create-group" data-icon="users" data-i18n="admin.createGroupWith">Create group with this member</button>
       </div>
     </aside>
 
@@ -125,8 +125,8 @@
           <div class="notice error hidden" id="member-form-error" role="alert"></div>
         </form>
         <div class="modal-foot">
-          <button class="btn btn-ghost" type="button" data-close-modal data-i18n="action.cancel">Cancel</button>
-          <button class="btn" type="button" id="member-save" data-i18n="admin.saveMember">Save member</button>
+          <button class="btn btn-ghost" type="button" data-close-modal data-icon="x" data-i18n="action.cancel">Cancel</button>
+          <button class="btn" type="button" id="member-save" data-icon="check" data-i18n="admin.saveMember">Save member</button>
         </div>
       </div>
     </div>
@@ -162,8 +162,8 @@
           <div class="notice error hidden" id="group-form-error" role="alert"></div>
         </form>
         <div class="modal-foot">
-          <button class="btn btn-ghost" type="button" data-close-group-modal data-i18n="action.cancel">Cancel</button>
-          <button class="btn" type="button" id="group-save" data-i18n="admin.saveGroup">Save group</button>
+          <button class="btn btn-ghost" type="button" data-close-group-modal data-icon="x" data-i18n="action.cancel">Cancel</button>
+          <button class="btn" type="button" id="group-save" data-icon="check" data-i18n="admin.saveGroup">Save group</button>
         </div>
       </div>
     </div>

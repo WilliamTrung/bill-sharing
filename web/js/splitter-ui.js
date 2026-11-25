@@ -10,6 +10,7 @@
     mode: "EVEN",
     files: [],
     currentUserID: null,
+    kind: "ALL",
   };
 
   const form = document.getElementById("bill-form");
@@ -28,6 +29,7 @@
   const participantsEmpty = document.getElementById("participants-empty");
   const participantsNoMatch = document.getElementById("participants-no-match");
   const participantSearch = document.getElementById("participant-search");
+  const participantKind = document.getElementById("participant-kind");
   const preview = document.getElementById("preview");
   const previewTotal = document.getElementById("preview-total");
   const previewTotalAmount = document.getElementById("preview-total-amount");
@@ -149,18 +151,23 @@
 
     const query = participantSearch.value.trim().toLowerCase();
     const matches = (name) => !query || name.toLowerCase().includes(query);
+    const kind = state.kind;
 
     // A selected entry always stays visible so it can be unchecked.
     let shown = 0;
-    for (const member of actives) {
-      if (!matches(member.name) && !state.selected.has(selectionKey("MEMBER", member.id))) continue;
-      participantsWrap.appendChild(buildChoice("MEMBER", member));
-      shown += 1;
+    if (kind !== "GROUP") {
+      for (const member of actives) {
+        if (!matches(member.name) && !state.selected.has(selectionKey("MEMBER", member.id))) continue;
+        participantsWrap.appendChild(buildChoice("MEMBER", member));
+        shown += 1;
+      }
     }
-    for (const group of activeGroups()) {
-      if (!matches(group.name) && !state.selected.has(selectionKey("GROUP", group.id))) continue;
-      participantsWrap.appendChild(buildChoice("GROUP", group));
-      shown += 1;
+    if (kind !== "MEMBER") {
+      for (const group of activeGroups()) {
+        if (!matches(group.name) && !state.selected.has(selectionKey("GROUP", group.id))) continue;
+        participantsWrap.appendChild(buildChoice("GROUP", group));
+        shown += 1;
+      }
     }
 
     if (shown === 0) participantsNoMatch.classList.remove("hidden");
@@ -573,7 +580,7 @@
     };
 
     submitBtn.disabled = true;
-    submitBtn.textContent = I18n.t("bill.saving");
+    Icons.setLabel(submitBtn, I18n.t("bill.saving"));
     try {
       const created = await API.createBill(payload, state.files);
       UI.toast(I18n.t("bill.saved"), "success");
@@ -582,7 +589,7 @@
       billError.textContent = UI.errorMessage(err);
       billError.classList.remove("hidden");
       submitBtn.disabled = false;
-      submitBtn.textContent = I18n.t("bill.saveBill");
+      Icons.setLabel(submitBtn, I18n.t("bill.saveBill"));
     }
   }
 
@@ -640,6 +647,15 @@
     refresh();
   });
   participantSearch.addEventListener("input", () => renderParticipants());
+  participantKind.addEventListener("click", (event) => {
+    const btn = event.target.closest("button[data-kind]");
+    if (!btn) return;
+    state.kind = btn.dataset.kind;
+    participantKind.querySelectorAll("button").forEach((b) => {
+      b.classList.toggle("active", b.dataset.kind === state.kind);
+    });
+    renderParticipants();
+  });
   participantsWrap.addEventListener("input", (event) => {
     if (event.target.matches("input[data-role=weight]")) renderPreview();
   });
