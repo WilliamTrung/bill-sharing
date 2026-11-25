@@ -27,6 +27,7 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Share da Bill}
     volumes:
       - uploads:/data/uploads
     ports:

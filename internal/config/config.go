@@ -27,6 +27,7 @@ type Config struct {
 	SMTPUser       string
 	SMTPPassword   string
 	SMTPFrom       string
+	SMTPFromName   string
 }
 
 func Load() (Config, error) {
@@ -48,6 +49,7 @@ func Load() (Config, error) {
 		SMTPUser:       strings.TrimSpace(os.Getenv("SMTP_USER")),
 		SMTPPassword:   os.Getenv("SMTP_PASSWORD"),
 		SMTPFrom:       strings.TrimSpace(os.Getenv("SMTP_FROM")),
+		SMTPFromName:   getenv("SMTP_FROM_NAME", "Share da Bill"),
 	}
 
 	if cfg.DatabaseURL == "" {

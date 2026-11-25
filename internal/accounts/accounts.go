@@ -125,15 +125,6 @@ func UpdateProfile(ctx context.Context, pool *pgxpool.Pool, userID int64, displa
 	return user, nil
 }
 
-func SessionLanguage(ctx context.Context, pool *pgxpool.Pool, userID int64) (string, error) {
-	var language string
-	err := pool.QueryRow(ctx, `SELECT language FROM users WHERE id = $1`, userID).Scan(&language)
-	if err != nil {
-		return "", err
-	}
-	return language, nil
-}
-
 func ChangePassword(ctx context.Context, pool *pgxpool.Pool, userID int64, current, next string) error {
 	var hash string
 	err := pool.QueryRow(ctx, `SELECT password_hash FROM users WHERE id = $1`, userID).Scan(&hash)

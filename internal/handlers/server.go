@@ -38,6 +38,7 @@ func New(cfg config.Config, db *pgxpool.Pool, logger *slog.Logger, webFS fs.FS) 
 			User: cfg.SMTPUser,
 			Pass: cfg.SMTPPassword,
 			From: cfg.SMTPFrom,
+			Name: cfg.SMTPFromName,
 		},
 		logger:  logger,
 		webFS:   webFS,

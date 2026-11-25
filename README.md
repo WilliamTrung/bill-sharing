@@ -46,6 +46,7 @@ The app is published on `APP_HOST_PORT` (default `8080`). Uploaded receipts use 
 | `SMTP_USER` | no | – | Gmail address; with `SMTP_PASSWORD`, enables member welcome email |
 | `SMTP_PASSWORD` | no | – | Gmail [app password](https://support.google.com/accounts/answer/185833) |
 | `SMTP_FROM` | no | `SMTP_USER` | From header |
+| `SMTP_FROM_NAME` | no | `Share da Bill` | Display name recipients see instead of the address |
 
 `docker-compose.yml` requires `DATABASE_URL` plus the seed and session variables above.
 

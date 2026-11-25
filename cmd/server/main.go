@@ -55,6 +55,11 @@ func run(logger *slog.Logger) error {
 		return fmt.Errorf("seed account: %w", err)
 	}
 	logger.Info("seed account ready", "outcome", outcome, "username", cfg.SeedUsername)
+	logger.Info("email alerts",
+		"enabled", cfg.SMTPUser != "" && cfg.SMTPPassword != "",
+		"from", cfg.SMTPFrom,
+		"name", cfg.SMTPFromName,
+	)
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,

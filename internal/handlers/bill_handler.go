@@ -113,6 +113,13 @@ func (s *Server) handleCreateBill(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Default the payer to the signed-in user unless one was chosen explicitly.
+	if payload.PaidByMemberID <= 0 {
+		if userID, ok := s.auth.RequestUser(r); ok {
+			payload.PaidByMemberID = userID
+		}
+	}
+
 	attachments, err := s.prepareAttachments(r.MultipartForm.File["files"])
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())

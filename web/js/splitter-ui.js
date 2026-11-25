@@ -9,12 +9,21 @@
     selected: new Map(),
     mode: "EVEN",
     files: [],
+    currentUserID: null,
   };
 
   const form = document.getElementById("bill-form");
   const amountInput = document.getElementById("b-amount");
   const dateInput = document.getElementById("b-date");
-  const payerSelect = document.getElementById("b-payer");
+  const payerInput = document.getElementById("b-payer");
+  const payerButton = document.getElementById("b-payer-button");
+  const payerCurrent = document.getElementById("b-payer-current");
+  const payerModal = document.getElementById("payer-modal");
+  const payerSearch = document.getElementById("payer-search");
+  const payerList = document.getElementById("payer-list");
+  const payerEmpty = document.getElementById("payer-empty");
+  const payerClose = document.getElementById("payer-close");
+  const payerCancel = document.getElementById("payer-cancel");
   const participantsWrap = document.getElementById("participants");
   const participantsEmpty = document.getElementById("participants-empty");
   const preview = document.getElementById("preview");
@@ -345,19 +354,93 @@
     if (label) label.textContent = API.currency();
   }
 
-  function renderPayers() {
-    payerSelect.replaceChildren();
-    const placeholder = document.createElement("option");
-    placeholder.value = "";
-    placeholder.textContent = I18n.t("bill.payerPlaceholder");
-    payerSelect.appendChild(placeholder);
+  function payer(id) {
+    return state.members.find((m) => m.id === id) || null;
+  }
 
-    for (const member of activeMembers()) {
-      const option = document.createElement("option");
-      option.value = String(member.id);
-      option.textContent = member.name;
-      payerSelect.appendChild(option);
+  function memberContact(member) {
+    return member.email || member.phone || "";
+  }
+
+  function renderPayer() {
+    payerCurrent.replaceChildren();
+    const chosen = payer(payerID());
+    if (chosen) {
+      payerCurrent.appendChild(UI.avatar(chosen.name, chosen.avatar_color, 22));
+      payerCurrent.appendChild(UI.el("span", "strong", chosen.name));
+    } else {
+      payerCurrent.appendChild(UI.el("span", "faint", I18n.t("bill.payerPlaceholder")));
     }
+    payerButton.disabled = activeMembers().length === 0;
+  }
+
+  function payerID() {
+    const value = Number(payerInput.value);
+    return Number.isFinite(value) && value > 0 ? value : null;
+  }
+
+  function setPayer(id) {
+    payerInput.value = id ? String(id) : "";
+    renderPayer();
+  }
+
+  function matchesSearch(member, query) {
+    if (!query) return true;
+    return [member.name, member.email, member.username]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(query));
+  }
+
+  function renderPayerOptions() {
+    payerList.replaceChildren();
+    const query = payerSearch.value.trim().toLowerCase();
+    const matches = activeMembers().filter((member) => matchesSearch(member, query));
+
+    payerEmpty.classList.toggle("hidden", matches.length > 0);
+    for (const member of matches) {
+      payerList.appendChild(buildPayerOption(member));
+    }
+  }
+
+  function buildPayerOption(member) {
+    const option = document.createElement("button");
+    option.type = "button";
+    option.className = "choice payer-option";
+    option.setAttribute("role", "option");
+    option.setAttribute("aria-selected", String(member.id === payerID()));
+    option.dataset.payerId = String(member.id);
+
+    const body = UI.el("div", "choice-body");
+    const title = UI.el("div", "choice-title");
+    title.appendChild(UI.avatar(member.name, member.avatar_color, 26));
+    title.appendChild(UI.el("span", "", member.name));
+    const contact = memberContact(member);
+    if (contact) title.appendChild(UI.el("span", "contact", contact));
+    if (state.currentUserID && member.id === state.currentUserID) {
+      title.appendChild(UI.el("span", "pill pill-accent me-pill", I18n.t("bill.youPill")));
+    } else if (member.id === payerID()) {
+      title.appendChild(UI.el("span", "pill pill-accent me-pill", I18n.t("bill.payerSelected")));
+    }
+    body.appendChild(title);
+    option.appendChild(body);
+
+    option.addEventListener("click", () => {
+      setPayer(member.id);
+      closePayerPicker();
+    });
+    return option;
+  }
+
+  function openPayerPicker() {
+    if (activeMembers().length === 0) return;
+    payerSearch.value = "";
+    renderPayerOptions();
+    payerModal.classList.add("open");
+    payerSearch.focus();
+  }
+
+  function closePayerPicker() {
+    payerModal.classList.remove("open");
   }
 
   function addFiles(incoming) {
@@ -431,7 +514,7 @@
     if (!title) return I18n.t("bill.errTitleRequired");
     if (Money.parse(amountInput.value) <= 0) return I18n.t("bill.errAmount");
     if (!dateInput.value) return I18n.t("bill.errDate");
-    if (!payerSelect.value) return I18n.t("bill.errPayer");
+    if (!payerID()) return I18n.t("bill.errPayer");
     if (state.selected.size === 0) return I18n.t("bill.errParticipants");
     const plan = computePlan();
     if (!plan.valid) return plan.reason;
@@ -452,7 +535,7 @@
       title: form.elements.title.value.trim(),
       description: form.elements.description.value.trim(),
       total_amount_cents: Money.parse(amountInput.value),
-      paid_by_member_id: Number(payerSelect.value),
+      paid_by_member_id: payerID(),
       split_mode: state.mode,
       bill_date: dateInput.value,
       participants: entries.map((entry, index) => ({
@@ -487,14 +570,33 @@
   }
 
   async function load() {
-    const [members, groups] = await Promise.all([API.listMembers(), API.listGroups()]);
+    const [members, groups, session] = await Promise.all([
+      API.listMembers(),
+      API.listGroups(),
+      API.currentSession(),
+    ]);
     state.members = members;
     state.groups = groups;
-    renderPayers();
+    state.currentUserID = session && session.user ? session.user.id : null;
+
+    const own = payer(state.currentUserID);
+    setPayer(own && own.is_active ? own.id : null);
+
     renderParticipants();
     renderPreview();
     updateCurrencyLabel();
   }
+
+  payerButton.addEventListener("click", openPayerPicker);
+  payerSearch.addEventListener("input", renderPayerOptions);
+  payerClose.addEventListener("click", closePayerPicker);
+  payerCancel.addEventListener("click", closePayerPicker);
+  payerModal.addEventListener("click", (event) => {
+    if (event.target === payerModal) closePayerPicker();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && payerModal.classList.contains("open")) closePayerPicker();
+  });
 
   form.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -546,7 +648,8 @@
   dateInput.value = UI.todayISO();
 
   Chrome.onLanguageChange = () => {
-    renderPayers();
+    renderPayer();
+    renderPayerOptions();
     renderParticipants();
     renderPreview();
     renderThumbs();
