@@ -109,20 +109,11 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 }
 
 // requireAdmin allows only signed-in users whose email is listed in ADMIN_EMAILS.
+// The account is re-read from the database on every call, so a revoked admin
+// loses access immediately instead of when their cookie expires.
 func (s *Server) requireAdmin(next http.Handler) http.Handler {
 	return s.requireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		userID, ok := s.auth.RequestUser(r)
-		if !ok {
-			writeError(w, http.StatusUnauthorized, "Authentication required")
-			return
-		}
-		user, err := accounts.GetUser(r.Context(), s.db, userID)
-		if err != nil {
-			s.logger.Error("load admin user", "error", err)
-			writeError(w, http.StatusInternalServerError, "Could not verify permissions")
-			return
-		}
-		if !s.cfg.IsAdminEmail(user.Email) {
+		if !s.requestIsAdmin(r) {
 			writeError(w, http.StatusForbidden, "Only admins can manage members")
 			return
 		}
@@ -171,6 +162,26 @@ func staticPageRequiresAuth(file string) bool {
 	}
 }
 
+// adminOnlyPage marks the pages whose contents only make sense for admins.
+func adminOnlyPage(file string) bool {
+	return file == "admin/index.html"
+}
+
+// requestIsAdmin resolves the caller's account server-side and checks it against
+// ADMIN_EMAILS. Authorization is decided here, never by the browser.
+func (s *Server) requestIsAdmin(r *http.Request) bool {
+	userID, ok := s.auth.RequestUser(r)
+	if !ok {
+		return false
+	}
+	user, err := accounts.GetUser(r.Context(), s.db, userID)
+	if err != nil {
+		s.logger.Error("resolve admin for request", "error", err)
+		return false
+	}
+	return s.cfg.IsAdminEmail(user.Email)
+}
+
 func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
 	if redirect, ok := legacyStaticRedirect(r.URL.Path); ok {
 		http.Redirect(w, r, redirect, http.StatusMovedPermanently)
@@ -185,6 +196,13 @@ func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
 
 	if staticPageRequiresAuth(name) && !s.auth.RequestValid(r) {
 		http.Redirect(w, r, "/login.html", http.StatusFound)
+		return
+	}
+
+	// The server decides access to admin pages; a non-admin is sent back to the
+	// dashboard rather than being handed the management UI.
+	if adminOnlyPage(name) && !s.requestIsAdmin(r) {
+		http.Redirect(w, r, "/dashboard.html", http.StatusFound)
 		return
 	}
 

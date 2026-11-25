@@ -175,7 +175,10 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"currency": s.cfg.Currency})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"currency":          s.cfg.Currency,
+		"currency_decimals": s.cfg.CurrencyDecimals,
+	})
 }
 
 func clientIP(r *http.Request) string {

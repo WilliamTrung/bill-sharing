@@ -52,7 +52,7 @@ The app is published on `APP_HOST_PORT` (default `8080`). Uploaded receipts use 
 
 `docker-compose.yml` contains no secrets or environment values of its own — it reads everything from `env_file` (the deploy env file, `deploy/deploy.env.example` as a template). Only `PORT`, `UPLOAD_DIR` and `WEB_DIR` are set inside the container.
 
-`ADMIN_EMAILS` (JSON array or comma-separated) lists the accounts allowed to add/edit members and groups and to resend invitations; every other signed-in user can read members and create bills but gets `403` on those routes. The seed email is always an admin.
+`ADMIN_EMAILS` (JSON array or comma-separated) lists the accounts allowed to add/edit members and groups and to resend invitations. Authorization is enforced by the Go service: the account is re-read from the database on every request and checked against the list, so `/admin` redirects non-admins to the dashboard and member/group write endpoints return `403` regardless of what the browser does. The seed email is always an admin. The admin page still hides its controls for non-admins, but that is a convenience, not the security boundary.
 
 People live in a single `users` table: login rows have a `password_hash`; bill-only people are created with a null password and a `display_name` for splitting. The `/api/members` routes still use that same table (column names in JSON stay `name`, `member_id`, etc.). Each row also stores a `language` (`en`/`vi`, default `en`) used as the interface language on devices that have not picked one; `/api/session` returns it to the client.
 

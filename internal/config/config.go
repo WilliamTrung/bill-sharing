@@ -22,6 +22,7 @@ type Config struct {
 	MaxUploadBytes int64
 	SessionTTL     time.Duration
 	Currency       string
+	CurrencyDecimals int
 	SMTPHost       string
 	SMTPPort       int
 	SMTPUser       string
@@ -46,6 +47,7 @@ func Load() (Config, error) {
 		MaxUploadBytes: getInt64("MAX_UPLOAD_BYTES", 25<<20),
 		SessionTTL:     30 * 24 * time.Hour,
 		Currency:       getenv("CURRENCY", "$"),
+		CurrencyDecimals: int(getInt64("CURRENCY_DECIMALS", 2)),
 		SMTPHost:       getenv("SMTP_HOST", "smtp.gmail.com"),
 		SMTPPort:       int(getInt64("SMTP_PORT", 587)),
 		SMTPUser:       strings.TrimSpace(os.Getenv("SMTP_USER")),
@@ -80,6 +82,9 @@ func Load() (Config, error) {
 	}
 	if cfg.MaxUploadBytes <= 0 {
 		return Config{}, errors.New("MAX_UPLOAD_BYTES must be positive")
+	}
+	if cfg.CurrencyDecimals < 0 || cfg.CurrencyDecimals > 4 {
+		return Config{}, errors.New("CURRENCY_DECIMALS must be between 0 and 4")
 	}
 	if _, err := strconv.Atoi(cfg.Port); err != nil {
 		return Config{}, fmt.Errorf("PORT must be a number: %w", err)

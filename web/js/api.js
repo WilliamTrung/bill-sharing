@@ -1,5 +1,6 @@
 const API = (() => {
   let currency = "$";
+  let decimals = 2;
 
   class ApiError extends Error {
     constructor(message, status) {
@@ -74,6 +75,9 @@ const API = (() => {
         if (cfg && typeof cfg.currency === "string" && cfg.currency.length <= 4) {
           currency = cfg.currency;
         }
+        if (cfg && Number.isInteger(cfg.currency_decimals) && cfg.currency_decimals >= 0 && cfg.currency_decimals <= 4) {
+          decimals = cfg.currency_decimals;
+        }
       } catch (err) {
         if (err.status === 401) throw err;
       }
@@ -82,6 +86,10 @@ const API = (() => {
 
     currency() {
       return currency;
+    },
+
+    digits() {
+      return decimals;
     },
 
     login(identifier, password) {
@@ -251,23 +259,30 @@ const API = (() => {
 })();
 
 const Money = (() => {
+  // Minor units per major unit, e.g. 100 for "$" (cents) or 1 for VND.
+  function scale() {
+    return 10 ** API.digits();
+  }
+
   function toCents(value) {
     if (typeof value === "bigint") return value;
     if (!Number.isFinite(value)) return 0;
-    return Math.round(value * 100);
+    return Math.round(value * scale());
   }
 
   function format(cents, options) {
     const opts = options || {};
+    const digits = API.digits();
+    const factor = 10n ** BigInt(digits);
     const amount = typeof cents === "bigint" ? cents : BigInt(Math.trunc(Number(cents) || 0));
     const negative = amount < 0n;
     const abs = negative ? -amount : amount;
-    const whole = abs / 100n;
-    const fraction = abs % 100n;
+    const whole = abs / factor;
+    const fraction = abs % factor;
     const wholeText = whole.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-    const body = `${wholeText}.${fraction.toString().padStart(2, "0")}`;
+    const fractionText = digits > 0 ? `.${fraction.toString().padStart(digits, "0")}` : "";
     const sign = negative ? "-" : opts.signed && abs > 0n ? "+" : "";
-    return `${sign}${API.currency()}${body}`;
+    return `${sign}${API.currency()}${wholeText}${fractionText}`;
   }
 
   function parse(input) {
@@ -282,7 +297,7 @@ const Money = (() => {
 
   function toInput(cents) {
     const amount = Number(cents) || 0;
-    return (amount / 100).toFixed(2);
+    return (amount / scale()).toFixed(API.digits());
   }
 
   return { toCents, parse, format, toInput };
