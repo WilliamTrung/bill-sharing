@@ -1,47 +1,96 @@
 -- Legacy: fold members into users and re-point foreign keys (runs once when members exists).
 DO $$
+DECLARE
+    has_user_id boolean;
 BEGIN
     IF to_regclass('public.members') IS NULL THEN
         RETURN;
     END IF;
 
-    UPDATE users u
-    SET display_name = COALESCE(NULLIF(m.name, ''), u.display_name, u.username),
-        phone = m.phone,
-        notes = m.notes,
-        avatar_color = CASE WHEN u.avatar_color = '' THEN m.avatar_color ELSE u.avatar_color END,
-        email = CASE WHEN m.email <> '' THEN m.email ELSE u.email END,
-        is_active = m.is_active,
-        updated_at = now()
-    FROM members m
-    WHERE m.user_id = u.id;
+    SELECT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'members'
+          AND column_name = 'user_id'
+    ) INTO has_user_id;
 
-    INSERT INTO users (username, email, password_hash, display_name, phone, notes, avatar_color, is_active)
-    SELECT
-        'member' || m.id::text,
-        CASE WHEN m.email <> '' THEN m.email ELSE ('member' || m.id::text || '@users.invalid') END,
-        NULL,
-        m.name,
-        m.phone,
-        m.notes,
-        m.avatar_color,
-        m.is_active
-    FROM members m
-    WHERE m.user_id IS NULL
-      AND NOT EXISTS (
-        SELECT 1 FROM users u
-        WHERE m.email <> '' AND lower(u.email) = lower(m.email)
-      );
+    IF has_user_id THEN
+        UPDATE users u
+        SET display_name = COALESCE(NULLIF(m.name, ''), u.display_name, u.username),
+            phone = m.phone,
+            notes = m.notes,
+            avatar_color = CASE WHEN u.avatar_color = '' THEN m.avatar_color ELSE u.avatar_color END,
+            email = CASE WHEN m.email <> '' THEN m.email ELSE u.email END,
+            is_active = m.is_active,
+            updated_at = now()
+        FROM members m
+        WHERE m.user_id = u.id;
+    ELSE
+        UPDATE users u
+        SET display_name = COALESCE(NULLIF(m.name, ''), u.display_name, u.username),
+            phone = m.phone,
+            notes = m.notes,
+            avatar_color = CASE WHEN u.avatar_color = '' THEN m.avatar_color ELSE u.avatar_color END,
+            is_active = m.is_active,
+            updated_at = now()
+        FROM members m
+        WHERE m.email <> '' AND lower(u.email) = lower(m.email);
+    END IF;
 
-    CREATE TEMP TABLE _member_user_map ON COMMIT DROP AS
-    SELECT
-        m.id AS old_member_id,
-        COALESCE(
-            m.user_id,
-            (SELECT u.id FROM users u WHERE m.email <> '' AND lower(u.email) = lower(m.email) LIMIT 1),
-            (SELECT u.id FROM users u WHERE u.username = 'member' || m.id::text LIMIT 1)
-        ) AS user_id
-    FROM members m;
+    IF has_user_id THEN
+        INSERT INTO users (username, email, password_hash, display_name, phone, notes, avatar_color, is_active)
+        SELECT
+            'member' || m.id::text,
+            CASE WHEN m.email <> '' THEN m.email ELSE ('member' || m.id::text || '@users.invalid') END,
+            NULL,
+            m.name,
+            m.phone,
+            m.notes,
+            m.avatar_color,
+            m.is_active
+        FROM members m
+        WHERE m.user_id IS NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM users u
+            WHERE m.email <> '' AND lower(u.email) = lower(m.email)
+          );
+
+        CREATE TEMP TABLE _member_user_map ON COMMIT DROP AS
+        SELECT
+            m.id AS old_member_id,
+            COALESCE(
+                m.user_id,
+                (SELECT u.id FROM users u WHERE m.email <> '' AND lower(u.email) = lower(m.email) LIMIT 1),
+                (SELECT u.id FROM users u WHERE u.username = 'member' || m.id::text LIMIT 1)
+            ) AS user_id
+        FROM members m;
+    ELSE
+        INSERT INTO users (username, email, password_hash, display_name, phone, notes, avatar_color, is_active)
+        SELECT
+            'member' || m.id::text,
+            CASE WHEN m.email <> '' THEN m.email ELSE ('member' || m.id::text || '@users.invalid') END,
+            NULL,
+            m.name,
+            m.phone,
+            m.notes,
+            m.avatar_color,
+            m.is_active
+        FROM members m
+        WHERE NOT EXISTS (
+            SELECT 1 FROM users u
+            WHERE m.email <> '' AND lower(u.email) = lower(m.email)
+        );
+
+        CREATE TEMP TABLE _member_user_map ON COMMIT DROP AS
+        SELECT
+            m.id AS old_member_id,
+            COALESCE(
+                (SELECT u.id FROM users u WHERE m.email <> '' AND lower(u.email) = lower(m.email) LIMIT 1),
+                (SELECT u.id FROM users u WHERE u.username = 'member' || m.id::text LIMIT 1)
+            ) AS user_id
+        FROM members m;
+    END IF;
 
     UPDATE bills b
     SET paid_by_member_id = map.user_id
