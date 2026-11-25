@@ -47,10 +47,15 @@ The app is published on `APP_HOST_PORT` (default `8080`). Uploaded receipts use 
 | `SMTP_PASSWORD` | no | – | Gmail [app password](https://support.google.com/accounts/answer/185833) |
 | `SMTP_FROM` | no | `SMTP_USER` | From header |
 | `SMTP_FROM_NAME` | no | `Share da Bill` | Display name recipients see instead of the address |
+| `PUBLIC_BASE_URL` | no | `http://bill-sharing.williamthanhtrung.id.vn` | Public origin used to build invitation links |
 
 `docker-compose.yml` requires `DATABASE_URL` plus the seed and session variables above.
 
 People live in a single `users` table: login rows have a `password_hash`; bill-only people are created with a null password and a `display_name` for splitting. The `/api/members` routes still use that same table (column names in JSON stay `name`, `member_id`, etc.). Each row also stores a `language` (`en`/`vi`, default `en`) used as the interface language on devices that have not picked one; `/api/session` returns it to the client.
+
+### How a new member signs in
+
+Adding a member creates a **password-less** account, so it can take part in bills immediately but cannot log in yet. When the member has an email and SMTP is configured, the server emails a signed activation link (`http://bill-sharing.williamthanhtrung.id.vn/activate.html?token=…`, from `PUBLIC_BASE_URL`, valid 7 days). The member opens it, sets a password, and is signed in; from then on they sign in with that username or email. Admins can re-send the link from the members list or `POST /api/members/{id}/invite`. Tokens are HMAC-signed with `SESSION_SECRET` and stop working once a password is set.
 
 ## Development
 
@@ -97,6 +102,8 @@ Public (no session):
 | `GET` | `/api/config` |
 | `GET` | `/api/public/bills` |
 | `GET` | `/api/public/bills/{id}` |
+| `GET` | `/api/public/invite?token=…` |
+| `POST` | `/api/public/invite/accept?token=…` |
 | `GET` | `/uploads/{billID}/{filename}` |
 
 Authenticated:
@@ -109,6 +116,7 @@ Authenticated:
 | `PUT` | `/api/profile/password` |
 | `GET`/`POST` | `/api/members` |
 | `GET`/`PUT` | `/api/members/{id}` |
+| `POST` | `/api/members/{id}/invite` |
 | `GET`/`POST` | `/api/groups` |
 | `GET`/`PUT` | `/api/groups/{id}` |
 | `GET`/`POST` | `/api/bills` |

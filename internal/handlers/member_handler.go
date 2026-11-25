@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/WilliamTrung/bill-sharing/internal/accounts"
 	"github.com/WilliamTrung/bill-sharing/internal/models"
@@ -39,7 +38,8 @@ type memberUpdateInput struct {
 func (s *Server) handleListMembers(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	rows, err := s.db.Query(ctx, `
-		SELECT id, `+userLabelSQL+`, phone, email, notes, avatar_color, is_active, created_at, updated_at
+		SELECT id, `+userLabelSQL+`, phone, email, notes, avatar_color, is_active,
+		       (password_hash IS NOT NULL) AS has_password, created_at, updated_at
 		FROM users
 		ORDER BY is_active DESC, `+userLabelSQL+` ASC`)
 	if err != nil {
@@ -53,7 +53,7 @@ func (s *Server) handleListMembers(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var m models.Member
 		if err := rows.Scan(&m.ID, &m.Name, &m.Phone, &m.Email, &m.Notes, &m.AvatarColor,
-			&m.IsActive, &m.CreatedAt, &m.UpdatedAt); err != nil {
+			&m.IsActive, &m.HasPassword, &m.CreatedAt, &m.UpdatedAt); err != nil {
 			s.logger.Error("scan member", "error", err)
 			writeError(w, http.StatusInternalServerError, "Could not load members")
 			return
@@ -149,11 +149,12 @@ func (s *Server) handleCreateMember(w http.ResponseWriter, r *http.Request) {
 	err = s.db.QueryRow(r.Context(), `
 		INSERT INTO users (username, email, password_hash, display_name, phone, notes, avatar_color, is_active)
 		VALUES ($1, $2, NULL, $3, $4, $5, $6, $7)
-		RETURNING id, `+userLabelSQL+`, phone, email, notes, avatar_color, is_active, created_at, updated_at`,
+		RETURNING id, `+userLabelSQL+`, phone, email, notes, avatar_color, is_active,
+		          (password_hash IS NOT NULL) AS has_password, created_at, updated_at`,
 		username, email, name, strings.TrimSpace(in.Phone),
 		strings.TrimSpace(in.Notes), color, active,
 	).Scan(&m.ID, &m.Name, &m.Phone, &m.Email, &m.Notes, &m.AvatarColor,
-		&m.IsActive, &m.CreatedAt, &m.UpdatedAt)
+		&m.IsActive, &m.HasPassword, &m.CreatedAt, &m.UpdatedAt)
 	if err != nil {
 		s.logger.Error("create member", "error", err)
 		writeError(w, http.StatusInternalServerError, "Could not create member")
@@ -161,24 +162,8 @@ func (s *Server) handleCreateMember(w http.ResponseWriter, r *http.Request) {
 	}
 	m.Groups = []models.MemberGroupRef{}
 
-	if s.mailer.Enabled() && m.Email != "" {
-		to, subject, body := m.Email,
-			"You were added to Bill Sharing",
-			fmt.Sprintf("Hi %s,\n\nYou have been added as a member on Bill Sharing.\n", m.Name)
-		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-			done := make(chan error, 1)
-			go func() { done <- s.mailer.Send(to, subject, body) }()
-			select {
-			case err := <-done:
-				if err != nil {
-					s.logger.Warn("member welcome email failed", "to", to, "error", err)
-				}
-			case <-ctx.Done():
-				s.logger.Warn("member welcome email timed out", "to", to)
-			}
-		}()
+	if s.mailer.Enabled() && deliverableEmail(m.Email) {
+		s.sendInvite(m.Name, m.Email, m.ID)
 	}
 
 	writeJSON(w, http.StatusCreated, m)
@@ -308,10 +293,11 @@ func (s *Server) handleUpdateMember(w http.ResponseWriter, r *http.Request) {
 func (s *Server) loadMember(ctx context.Context, id int64) (models.Member, error) {
 	var m models.Member
 	err := s.db.QueryRow(ctx, `
-		SELECT id, `+userLabelSQL+`, phone, email, notes, avatar_color, is_active, created_at, updated_at
+		SELECT id, `+userLabelSQL+`, phone, email, notes, avatar_color, is_active,
+		       (password_hash IS NOT NULL) AS has_password, created_at, updated_at
 		FROM users WHERE id = $1`, id,
 	).Scan(&m.ID, &m.Name, &m.Phone, &m.Email, &m.Notes, &m.AvatarColor,
-		&m.IsActive, &m.CreatedAt, &m.UpdatedAt)
+		&m.IsActive, &m.HasPassword, &m.CreatedAt, &m.UpdatedAt)
 	if err != nil {
 		return models.Member{}, err
 	}

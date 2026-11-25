@@ -61,6 +61,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/config", s.handleConfig)
 	s.mux.HandleFunc("GET /api/public/bills", s.handlePublicListBills)
 	s.mux.HandleFunc("GET /api/public/bills/{id}", s.handlePublicGetBill)
+	s.mux.HandleFunc("GET /api/public/invite", s.handlePublicInvite)
+	s.mux.HandleFunc("POST /api/public/invite/accept", s.handleAcceptInvite)
 	s.mux.HandleFunc("GET /uploads/{billID}/{filename}", s.handleUploadedFile)
 
 	// Authenticated: everything that mutates data or exposes member contact info.
@@ -75,6 +77,7 @@ func (s *Server) routes() {
 	s.mux.Handle("POST /api/members", s.requireAuth(http.HandlerFunc(s.handleCreateMember)))
 	s.mux.Handle("GET /api/members/{id}", s.requireAuth(http.HandlerFunc(s.handleGetMember)))
 	s.mux.Handle("PUT /api/members/{id}", s.requireAuth(http.HandlerFunc(s.handleUpdateMember)))
+	s.mux.Handle("POST /api/members/{id}/invite", s.requireAuth(http.HandlerFunc(s.handleSendInvite)))
 
 	s.mux.Handle("GET /api/groups", s.requireAuth(http.HandlerFunc(s.handleListGroups)))
 	s.mux.Handle("POST /api/groups", s.requireAuth(http.HandlerFunc(s.handleCreateGroup)))
@@ -136,7 +139,7 @@ func staticPageRequiresAuth(file string) bool {
 		return false
 	}
 	switch file {
-	case "index.html", "login.html", "bill-detail.html":
+	case "index.html", "login.html", "bill-detail.html", "activate.html":
 		return false
 	default:
 		return true

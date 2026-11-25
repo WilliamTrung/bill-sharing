@@ -28,6 +28,7 @@ services:
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM: ${SMTP_FROM:-}
       SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Share da Bill}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://bill-sharing.williamthanhtrung.id.vn}
     volumes:
       - uploads:/data/uploads
     ports:

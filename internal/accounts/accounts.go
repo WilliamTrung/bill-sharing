@@ -149,6 +149,44 @@ func ChangePassword(ctx context.Context, pool *pgxpool.Pool, userID int64, curre
 	return nil
 }
 
+// Invitee returns the account behind an invitation token, but only while it has
+// no password yet — an accepted or already-active account cannot be re-claimed.
+func Invitee(ctx context.Context, pool *pgxpool.Pool, userID int64) (models.User, error) {
+	user, err := scanUser(pool.QueryRow(ctx, `
+		SELECT `+userColumns+` FROM users WHERE id = $1`, userID))
+	if err != nil {
+		return models.User{}, err
+	}
+	if user.HasPassword || !user.IsActive {
+		return models.User{}, ErrInvalidCredentials
+	}
+	return user, nil
+}
+
+// Activate sets the first password for an invited account.
+func Activate(ctx context.Context, pool *pgxpool.Pool, userID int64, password string) (models.User, error) {
+	hash, err := HashPassword(password)
+	if err != nil {
+		return models.User{}, fmt.Errorf("hash password: %w", err)
+	}
+
+	var user models.User
+	err = pool.QueryRow(ctx, `
+		UPDATE users SET password_hash = $1, updated_at = now()
+		WHERE id = $2 AND password_hash IS NULL AND is_active
+		RETURNING `+userColumns, hash, userID,
+	).Scan(&user.ID, &user.Username, &user.Email, &user.DisplayName, &user.Phone,
+		&user.Notes, &user.AvatarColor, &user.IsActive, &user.HasPassword, &user.Language,
+		&user.CreatedAt, &user.UpdatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return models.User{}, ErrInvalidCredentials
+	}
+	if err != nil {
+		return models.User{}, fmt.Errorf("activate account: %w", err)
+	}
+	return user, nil
+}
+
 func Authenticate(ctx context.Context, pool *pgxpool.Pool, identifier, password string) (models.User, error) {
 	identifier = strings.TrimSpace(identifier)
 	if identifier == "" || password == "" {

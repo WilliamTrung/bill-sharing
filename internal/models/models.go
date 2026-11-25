@@ -30,6 +30,7 @@ type Member struct {
 	Notes       string           `json:"notes"`
 	AvatarColor string           `json:"avatar_color"`
 	IsActive    bool             `json:"is_active"`
+	HasPassword bool             `json:"has_password"`
 	CreatedAt   time.Time        `json:"created_at"`
 	UpdatedAt   time.Time        `json:"updated_at"`
 	Groups      []MemberGroupRef `json:"groups"`

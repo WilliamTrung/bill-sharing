@@ -30,9 +30,28 @@
   const drawer = document.getElementById("member-drawer");
   const drawerTitle = document.getElementById("drawer-title");
   const drawerBody = document.getElementById("drawer-body");
+  const resendInviteBtn = document.getElementById("drawer-resend-invite");
 
   function memberById(id) {
     return state.members.find((m) => m.id === id);
+  }
+
+  function canInvite(member) {
+    return member.has_password === false && Boolean(member.email) && !member.email.endsWith("@users.invalid");
+  }
+
+  // sendInvite dispatches an activation link and reports the result on the button.
+  function sendInvite(member, button) {
+    button.disabled = true;
+    const label = button.textContent;
+    button.textContent = I18n.t("admin.inviteSending");
+    API.sendInvite(member.id)
+      .then(() => UI.toast(I18n.t("admin.inviteSent"), "success"))
+      .catch((err) => UI.toast(UI.errorMessage(err), "error"))
+      .finally(() => {
+        button.disabled = false;
+        button.textContent = label;
+      });
   }
 
   function renderMembers() {
@@ -87,6 +106,15 @@
       editBtn.type = "button";
       editBtn.addEventListener("click", () => openMemberModal(member));
       actionsWrap.appendChild(editBtn);
+
+      if (canInvite(member)) {
+        const inviteBtn = UI.el("button", "btn btn-ghost btn-sm", I18n.t("admin.resendInvite"));
+        inviteBtn.type = "button";
+        inviteBtn.title = I18n.t("admin.resendInviteHint");
+        inviteBtn.addEventListener("click", () => sendInvite(member, inviteBtn));
+        actionsWrap.appendChild(inviteBtn);
+      }
+
       actions.appendChild(actionsWrap);
       row.appendChild(actions);
 
@@ -387,6 +415,10 @@
     createBtn.disabled = !member.is_active;
     createBtn.title = member.is_active ? "" : I18n.t("admin.activateFirst");
 
+    resendInviteBtn.classList.toggle("hidden", !canInvite(member));
+    resendInviteBtn.title = canInvite(member) ? I18n.t("admin.resendInviteHint") : "";
+    resendInviteBtn.dataset.memberId = String(member.id);
+
     drawer.classList.add("open");
     backdrop.classList.add("open");
   }
@@ -425,6 +457,11 @@
     closeDrawer();
     openGroupModal(null);
     if (member) document.getElementById("g-name").value = `${member.name} & `;
+  });
+
+  resendInviteBtn.addEventListener("click", () => {
+    const member = memberById(Number(resendInviteBtn.dataset.memberId));
+    if (member) sendInvite(member, resendInviteBtn);
   });
 
   showInactive.addEventListener("change", () => {

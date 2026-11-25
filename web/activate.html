@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title data-i18n="activate.docTitle">Activate account · Bill Sharing</title>
+    <link rel="stylesheet" href="/css/styles.css" />
+  </head>
+  <body>
+    <main class="login-wrap">
+      <div class="login-card">
+        <div class="spread">
+          <span class="brand" data-i18n="app.name">Bill Sharing</span>
+          <div data-lang-switcher></div>
+        </div>
+        <h1 data-i18n="activate.heading">Set your password</h1>
+        <p class="sub" id="activate-sub" data-i18n="activate.sub">Choose a password to finish setting up your account.</p>
+
+        <form class="form" id="activate-form" novalidate>
+          <div class="field">
+            <label for="activate-password" data-i18n="activate.password">Password</label>
+            <input
+              id="activate-password"
+              name="password"
+              type="password"
+              autocomplete="new-password"
+              minlength="8"
+              required
+              autofocus
+            />
+            <div class="hint" data-i18n="activate.passwordHint">At least 8 characters.</div>
+          </div>
+          <div class="field">
+            <label for="activate-confirm" data-i18n="activate.confirm">Confirm password</label>
+            <input id="activate-confirm" name="confirm" type="password" autocomplete="new-password" required />
+          </div>
+          <div class="notice error hidden" id="activate-error" role="alert"></div>
+          <button class="btn btn-block" type="submit" id="activate-submit" data-i18n="activate.submit">Activate account</button>
+        </form>
+
+        <p class="muted small" id="activate-done" hidden>
+          <span data-i18n="activate.success">Your account is ready.</span>
+          <a href="/dashboard.html" data-i18n="activate.continue">Continue to the dashboard</a>
+        </p>
+      </div>
+    </main>
+
+    <script src="/js/i18n.js"></script>
+    <script src="/js/api.js"></script>
+    <script src="/js/common.js"></script>
+    <script src="/js/activate.js"></script>
+  </body>
+</html>

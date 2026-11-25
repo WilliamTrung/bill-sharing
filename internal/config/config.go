@@ -28,6 +28,7 @@ type Config struct {
 	SMTPPassword   string
 	SMTPFrom       string
 	SMTPFromName   string
+	PublicBaseURL  string
 }
 
 func Load() (Config, error) {
@@ -50,6 +51,7 @@ func Load() (Config, error) {
 		SMTPPassword:   os.Getenv("SMTP_PASSWORD"),
 		SMTPFrom:       strings.TrimSpace(os.Getenv("SMTP_FROM")),
 		SMTPFromName:   getenv("SMTP_FROM_NAME", "Share da Bill"),
+		PublicBaseURL:  strings.TrimRight(getenv("PUBLIC_BASE_URL", "http://localhost:8080"), "/"),
 	}
 
 	if cfg.DatabaseURL == "" {

@@ -144,6 +144,22 @@ const API = (() => {
       return request("GET", `/api/public/bills/${id}`, undefined, { redirectOn401: false });
     },
 
+    getInvite(token) {
+      return request("GET", `/api/public/invite?token=${encodeURIComponent(token)}`, undefined, {
+        redirectOn401: false,
+      });
+    },
+
+    acceptInvite(token, password) {
+      return request("POST", `/api/public/invite/accept?token=${encodeURIComponent(token)}`, { password }, {
+        redirectOn401: false,
+      });
+    },
+
+    sendInvite(memberId) {
+      return request("POST", `/api/members/${memberId}/invite`);
+    },
+
     updateBillStatus(id, status) {
       return request("PUT", `/api/bills/${id}/status`, { status });
     },
