@@ -17,6 +17,8 @@ fi
 if [[ -z "${DB_PASS:-}" ]]; then
   if [[ -n "${POSTGRES_PASSWORD:-}" ]]; then
     DB_PASS="$POSTGRES_PASSWORD"
+  elif [[ "${DATABASE_URL:-}" =~ postgres://[^/]+:([^@]+)@ ]]; then
+    DB_PASS="${BASH_REMATCH[1]}"
   else
     DB_PASS="$(openssl rand -hex 16)"
   fi
@@ -24,7 +26,11 @@ fi
 
 DB_PASS_SQL="${DB_PASS//\'/\'\'}"
 
-if ! docker exec shared-postgres psql -U postgres -At -c "SELECT 1 FROM pg_roles WHERE rolname='${DB_USER}'" | grep -q 1; then
+if docker exec shared-postgres psql -U postgres -At -c "SELECT 1 FROM pg_roles WHERE rolname='${DB_USER}'" | grep -q 1; then
+  printf '%s\n' "ALTER ROLE ${DB_USER} WITH PASSWORD '${DB_PASS_SQL}';" \
+    | docker exec -i shared-postgres psql -U postgres -v ON_ERROR_STOP=1
+  echo "synced password for role ${DB_USER}"
+else
   printf '%s\n' "CREATE ROLE ${DB_USER} LOGIN PASSWORD '${DB_PASS_SQL}';" \
     | docker exec -i shared-postgres psql -U postgres -v ON_ERROR_STOP=1
   echo "created role ${DB_USER}"
