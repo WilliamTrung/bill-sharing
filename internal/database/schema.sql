@@ -76,6 +76,9 @@ CREATE TABLE IF NOT EXISTS bill_participants (
     )
 );
 
+-- Optional per-participant note for this bill (e.g. "extra dessert").
+ALTER TABLE bill_participants ADD COLUMN IF NOT EXISTS note TEXT NOT NULL DEFAULT '';
+
 CREATE TABLE IF NOT EXISTS bill_member_shares (
     id BIGSERIAL PRIMARY KEY,
     bill_id BIGINT NOT NULL REFERENCES bills(id) ON DELETE CASCADE,

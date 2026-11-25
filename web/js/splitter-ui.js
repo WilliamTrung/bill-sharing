@@ -126,9 +126,13 @@
     return null;
   }
 
-  // Ratio weights live in the DOM; capture them before any re-render so typed
-  // values survive filtering and further selections.
+  // Notes and ratio weights live in the DOM; capture them before any re-render so
+  // typed values survive filtering and further selections.
   function syncWeights() {
+    for (const [key, entry] of state.selected) {
+      const input = document.querySelector(`[data-key="${key}"] input[data-role=note]`);
+      if (input) entry.note = input.value;
+    }
     if (state.mode !== "RATIO") return;
     for (const [key, entry] of state.selected) {
       const input = document.querySelector(`[data-key="${key}"] input[data-role=weight]`);
@@ -223,6 +227,20 @@
       body.appendChild(ratioBox);
     }
 
+    // A short note can be attached per participant, but only once they are picked.
+    if (state.selected.has(key)) {
+      const noteBox = UI.el("div", "note-box");
+      const noteInput = document.createElement("input");
+      noteInput.type = "text";
+      noteInput.maxLength = 200;
+      noteInput.dataset.role = "note";
+      noteInput.value = state.selected.get(key).note || "";
+      noteInput.placeholder = I18n.t("bill.notePlaceholder");
+      noteInput.setAttribute("aria-label", I18n.t("bill.noteFor", { name: entity.name }));
+      noteBox.appendChild(noteInput);
+      body.appendChild(noteBox);
+    }
+
     const note = UI.el("div", "conflict-note hidden");
     body.appendChild(note);
 
@@ -237,7 +255,7 @@
     if (state.selected.has(key)) {
       state.selected.delete(key);
     } else {
-      state.selected.set(key, { type, id: entity.id, weight: 1 });
+      state.selected.set(key, { type, id: entity.id, weight: 1, note: "" });
     }
     renderParticipants();
     renderPreview();
@@ -576,6 +594,7 @@
         type: entry.type,
         id: entry.id,
         weight: state.mode === "RATIO" ? weights[index] : 1,
+        note: (entry.note || "").trim(),
       })),
     };
 

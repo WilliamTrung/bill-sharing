@@ -195,7 +195,9 @@
 
       const titleCell = document.createElement("td");
       titleCell.appendChild(UI.el("div", "strong", item.bill_title));
-      titleCell.appendChild(UI.el("div", "small faint", UI.formatDate(item.bill_date)));
+      const meta = [UI.formatDate(item.bill_date)];
+      if (item.note) meta.push(item.note);
+      titleCell.appendChild(UI.el("div", "small faint", meta.join(" · ")));
       row.appendChild(titleCell);
 
       row.appendChild(UI.el("td", "small", item.counterparty_name));

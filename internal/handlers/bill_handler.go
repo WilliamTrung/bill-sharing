@@ -34,6 +34,7 @@ type participantInput struct {
 	Type   string  `json:"type"`
 	ID     int64   `json:"id"`
 	Weight float64 `json:"weight"`
+	Note   string  `json:"note"`
 }
 
 type billPayload struct {
@@ -63,6 +64,7 @@ type plannedParticipant struct {
 	Type      string
 	MemberID  *int64
 	GroupID   *int64
+	Note      string
 	Weight    float64
 	Allocated int64
 }
@@ -288,6 +290,7 @@ func (s *Server) buildBillPlan(ctx context.Context, payload billPayload) (*billP
 		participantType := strings.ToUpper(strings.TrimSpace(p.Type))
 		planned := plannedParticipant{
 			Type:      participantType,
+			Note:      strings.TrimSpace(p.Note),
 			Weight:    weights[i],
 			Allocated: topShares[i],
 		}
@@ -490,10 +493,10 @@ func (s *Server) storeBill(ctx context.Context, plan *billPlan, attachments []pr
 
 	for _, participant := range plan.Participants {
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO bill_participants (bill_id, participant_type, member_id, group_id, ratio_weight, allocated_amount_cents)
-			VALUES ($1, $2, $3, $4, $5, $6)`,
+			INSERT INTO bill_participants (bill_id, participant_type, member_id, group_id, note, ratio_weight, allocated_amount_cents)
+			VALUES ($1, $2, $3, $4, $5, $6, $7)`,
 			billID, participant.Type, participant.MemberID, participant.GroupID,
-			participant.Weight, participant.Allocated); err != nil {
+			participant.Note, participant.Weight, participant.Allocated); err != nil {
 			return 0, err
 		}
 	}
@@ -917,7 +920,7 @@ func (s *Server) loadBill(ctx context.Context, id int64) (models.Bill, error) {
 
 	participantRows, err := s.db.Query(ctx, `
 		SELECT p.id, p.participant_type, p.member_id, p.group_id,
-		       COALESCE(`+userLabelSQLM+`, g.name, ''), p.ratio_weight, p.allocated_amount_cents
+		       COALESCE(`+userLabelSQLM+`, g.name, ''), p.note, p.ratio_weight, p.allocated_amount_cents
 		FROM bill_participants p
 		LEFT JOIN users m ON m.id = p.member_id
 		LEFT JOIN member_groups g ON g.id = p.group_id
@@ -930,7 +933,7 @@ func (s *Server) loadBill(ctx context.Context, id int64) (models.Bill, error) {
 		var p models.BillParticipant
 		var memberID, groupID *int64
 		if err := participantRows.Scan(&p.ID, &p.ParticipantType, &memberID, &groupID,
-			&p.Name, &p.RatioWeight, &p.AllocatedAmountCents); err != nil {
+			&p.Name, &p.Note, &p.RatioWeight, &p.AllocatedAmountCents); err != nil {
 			participantRows.Close()
 			return models.Bill{}, err
 		}
@@ -1034,7 +1037,12 @@ func (s *Server) handleSettlements(w http.ResponseWriter, r *http.Request) {
 		SELECT s.id, b.id, b.title, b.bill_date, s.owed_amount_cents, s.is_settled,
 		       s.settle_requested_at IS NOT NULL,
 		       CASE WHEN s.member_id = $1 THEN 'debtor' ELSE 'payer' END AS role,
-		       `+userLabelSQLM+` AS debtor_name
+		       `+userLabelSQLM+` AS debtor_name,
+		       COALESCE((
+		           SELECT p.note FROM bill_participants p
+		           WHERE p.bill_id = b.id AND p.participant_type = 'MEMBER' AND p.member_id = s.member_id
+		           LIMIT 1
+		       ), '') AS note
 		FROM bill_member_shares s
 		JOIN bills b ON b.id = s.bill_id
 		JOIN users m ON m.id = s.member_id
@@ -1053,7 +1061,7 @@ func (s *Server) handleSettlements(w http.ResponseWriter, r *http.Request) {
 		var it models.SettlementItem
 		var billDate time.Time
 		if err := rows.Scan(&it.ShareID, &it.BillID, &it.BillTitle, &billDate, &it.OwedAmountCents,
-			&it.IsSettled, &it.Requested, &it.Role, &it.CounterpartyName); err != nil {
+			&it.IsSettled, &it.Requested, &it.Role, &it.CounterpartyName, &it.Note); err != nil {
 			writeError(w, http.StatusInternalServerError, "Could not load settlements")
 			return
 		}

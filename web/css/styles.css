@@ -779,6 +779,16 @@ textarea {
   gap: 8px;
 }
 
+.choice .note-box {
+  margin-top: 8px;
+}
+
+.choice .note-box input {
+  width: 100%;
+  padding: 6px 9px;
+  font-size: 0.84rem;
+}
+
 .payer-button {
   display: flex;
   align-items: center;

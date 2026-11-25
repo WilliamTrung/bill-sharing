@@ -108,7 +108,10 @@
       } else {
         line.appendChild(UI.avatar(participant.name, null));
       }
-      line.appendChild(UI.el("span", "strong", participant.name));
+      const who = UI.el("div", "who");
+      who.appendChild(UI.el("div", "name", participant.name));
+      if (participant.note) who.appendChild(UI.el("div", "sub", participant.note));
+      line.appendChild(who);
       nameCell.appendChild(line);
       row.appendChild(nameCell);
 
@@ -138,6 +141,15 @@
       }
     }
 
+    // Participant notes belong to top-level participants, index them by member id
+    // (falling back to the group id for group rows).
+    const shareNotes = new Map();
+    for (const participant of bill.participants || []) {
+      if (!participant.note) continue;
+      if (participant.member_id) shareNotes.set(`m${participant.member_id}`, participant.note);
+      if (participant.group_id) shareNotes.set(`g${participant.group_id}`, participant.note);
+    }
+
     let total = 0n;
     for (const share of shares) {
       const row = document.createElement("tr");
@@ -145,7 +157,13 @@
       const memberCell = document.createElement("td");
       const person = UI.el("div", "person");
       person.appendChild(UI.avatar(share.member_name, null));
-      person.appendChild(UI.el("span", "strong", share.member_name));
+      const who = UI.el("div", "who");
+      who.appendChild(UI.el("div", "name", share.member_name));
+      const shareNote = share.source_group_id
+        ? shareNotes.get(`g${share.source_group_id}`)
+        : shareNotes.get(`m${share.member_id}`);
+      if (shareNote) who.appendChild(UI.el("div", "sub", shareNote));
+      person.appendChild(who);
       memberCell.appendChild(person);
       row.appendChild(memberCell);
 

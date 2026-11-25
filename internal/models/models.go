@@ -90,6 +90,7 @@ type BillParticipant struct {
 	MemberID             *int64  `json:"member_id,omitempty"`
 	GroupID              *int64  `json:"group_id,omitempty"`
 	Name                 string  `json:"name"`
+	Note                 string  `json:"note"`
 	RatioWeight          float64 `json:"ratio_weight"`
 	AllocatedAmountCents int64   `json:"allocated_amount_cents"`
 }
@@ -113,6 +114,7 @@ type SettlementItem struct {
 	OwedAmountCents  int64  `json:"owed_amount_cents"`
 	Role             string `json:"role"` // "debtor" or "payer"
 	CounterpartyName string `json:"counterparty_name"`
+	Note             string `json:"note"`
 	IsSettled        bool   `json:"is_settled"`
 	Requested        bool   `json:"requested"`
 }
