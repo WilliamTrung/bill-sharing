@@ -16,7 +16,7 @@ cp .env.example .env   # then edit the secrets
 docker compose up -d --build
 ```
 
-The app is published on `APP_HOST_PORT` (default `8080`). Postgres data and uploaded receipts live in named volumes (`db-data`, `uploads`).
+The app is published on `APP_HOST_PORT` (default `8080`). Uploaded receipts use the `uploads` volume. Set `DATABASE_URL` to your Postgres (on MSI: `shared-postgres` via `db-net`; run `deploy/msi-init-db.sh` once).
 
 ## Deploy (MSI cicd-polling)
 
@@ -42,7 +42,7 @@ The app is published on `APP_HOST_PORT` (default `8080`). Postgres data and uplo
 | `MAX_UPLOAD_BYTES` | no | `26214400` | Per-bill upload limit (25 MB) |
 | `CURRENCY` | no | `$` | Symbol shown in the UI |
 
-`docker-compose.yml` reads `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `APP_PORT` from the environment as well.
+`docker-compose.yml` requires `DATABASE_URL` plus the seed and session variables above.
 
 ## Development
 
