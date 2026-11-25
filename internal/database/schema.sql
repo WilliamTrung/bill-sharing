@@ -21,6 +21,9 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS language TEXT NOT NULL DEFAULT 'en';
 ALTER TABLE users DROP CONSTRAINT IF EXISTS users_language_check;
 ALTER TABLE users ADD CONSTRAINT users_language_check CHECK (language IN ('en', 'vi'));
 
+-- When false (the default), only the account owner and admins see contact details.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_public BOOLEAN NOT NULL DEFAULT FALSE;
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users (lower(username));
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users (lower(email));
 
@@ -39,6 +42,10 @@ CREATE TABLE IF NOT EXISTS group_members (
     internal_ratio DOUBLE PRECISION NOT NULL DEFAULT 1.0 CHECK (internal_ratio > 0),
     PRIMARY KEY (group_id, member_id)
 );
+
+-- The account that owns (and may edit) a group. NULL for legacy groups, which
+-- only admins can manage.
+ALTER TABLE member_groups ADD COLUMN IF NOT EXISTS leader_user_id BIGINT;
 
 CREATE TABLE IF NOT EXISTS bills (
     id BIGSERIAL PRIMARY KEY,
@@ -94,6 +101,7 @@ CREATE INDEX IF NOT EXISTS idx_bill_member_shares_member ON bill_member_shares (
 CREATE INDEX IF NOT EXISTS idx_bill_attachments_bill ON bill_attachments (bill_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_bill_attachments_stored ON bill_attachments (bill_id, stored_filename);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_group_members_member ON group_members (member_id, group_id);
+CREATE INDEX IF NOT EXISTS idx_member_groups_leader ON member_groups (leader_user_id);
 
 -- FKs to users (member_id columns hold user ids).
 DO $$ BEGIN

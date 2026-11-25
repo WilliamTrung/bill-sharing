@@ -63,13 +63,13 @@ func EnsureSeed(ctx context.Context, pool *pgxpool.Pool, username, email, passwo
 }
 
 const userColumns = `id, username, email, display_name, phone, notes, avatar_color, is_active,
-	(password_hash IS NOT NULL) AS has_password, language, created_at, updated_at`
+	(password_hash IS NOT NULL) AS has_password, is_public, language, created_at, updated_at`
 
 func scanUser(row pgx.Row) (models.User, error) {
 	var user models.User
 	err := row.Scan(&user.ID, &user.Username, &user.Email, &user.DisplayName, &user.Phone,
-		&user.Notes, &user.AvatarColor, &user.IsActive, &user.HasPassword, &user.Language,
-		&user.CreatedAt, &user.UpdatedAt)
+		&user.Notes, &user.AvatarColor, &user.IsActive, &user.HasPassword, &user.IsPublic,
+		&user.Language, &user.CreatedAt, &user.UpdatedAt)
 	return user, err
 }
 
@@ -78,7 +78,7 @@ func GetUser(ctx context.Context, pool *pgxpool.Pool, userID int64) (models.User
 		SELECT `+userColumns+` FROM users WHERE id = $1`, userID))
 }
 
-func UpdateProfile(ctx context.Context, pool *pgxpool.Pool, userID int64, displayName, username, email, language string) (models.User, error) {
+func UpdateProfile(ctx context.Context, pool *pgxpool.Pool, userID int64, displayName, username, email, language string, isPublic bool) (models.User, error) {
 	displayName = strings.TrimSpace(displayName)
 	username = strings.TrimSpace(username)
 	email = strings.TrimSpace(email)
@@ -107,10 +107,11 @@ func UpdateProfile(ctx context.Context, pool *pgxpool.Pool, userID int64, displa
 	}
 
 	user, err := scanUser(tx.QueryRow(ctx, `
-		UPDATE users SET display_name = $1, username = $2, email = $3, language = $4, updated_at = now()
-		WHERE id = $5
+		UPDATE users SET display_name = $1, username = $2, email = $3, language = $4,
+		                 is_public = $5, updated_at = now()
+		WHERE id = $6
 		RETURNING `+userColumns,
-		displayName, username, email, language, userID,
+		displayName, username, email, language, isPublic, userID,
 	))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return models.User{}, err

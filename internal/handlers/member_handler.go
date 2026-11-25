@@ -35,11 +35,23 @@ type memberUpdateInput struct {
 	IsActive    *bool   `json:"is_active"`
 }
 
+// redactMember hides contact details from anyone who is neither an admin nor the
+// member themselves, unless that member chose to publish their profile. The name
+// stays visible because it is how people pick participants.
+func (s *Server) redactMember(viewerID int64, viewerIsAdmin bool, m *models.Member) {
+	if viewerIsAdmin || m.ID == viewerID || m.IsPublic {
+		return
+	}
+	m.Email = ""
+	m.Phone = ""
+	m.Notes = ""
+}
+
 func (s *Server) handleListMembers(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	rows, err := s.db.Query(ctx, `
 		SELECT id, `+userLabelSQL+`, phone, email, notes, avatar_color, is_active,
-		       (password_hash IS NOT NULL) AS has_password, created_at, updated_at
+		       (password_hash IS NOT NULL) AS has_password, is_public, created_at, updated_at
 		FROM users
 		ORDER BY is_active DESC, `+userLabelSQL+` ASC`)
 	if err != nil {
@@ -53,7 +65,7 @@ func (s *Server) handleListMembers(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var m models.Member
 		if err := rows.Scan(&m.ID, &m.Name, &m.Phone, &m.Email, &m.Notes, &m.AvatarColor,
-			&m.IsActive, &m.HasPassword, &m.CreatedAt, &m.UpdatedAt); err != nil {
+			&m.IsActive, &m.HasPassword, &m.IsPublic, &m.CreatedAt, &m.UpdatedAt); err != nil {
 			s.logger.Error("scan member", "error", err)
 			writeError(w, http.StatusInternalServerError, "Could not load members")
 			return
@@ -92,6 +104,12 @@ func (s *Server) handleListMembers(w http.ResponseWriter, r *http.Request) {
 		if groups, ok := byMember[members[i].ID]; ok {
 			members[i].Groups = groups
 		}
+	}
+
+	viewerID, _ := s.auth.RequestUser(r)
+	viewerIsAdmin := s.requestIsAdmin(r)
+	for i := range members {
+		s.redactMember(viewerID, viewerIsAdmin, &members[i])
 	}
 
 	writeJSON(w, http.StatusOK, members)
@@ -150,11 +168,11 @@ func (s *Server) handleCreateMember(w http.ResponseWriter, r *http.Request) {
 		INSERT INTO users (username, email, password_hash, display_name, phone, notes, avatar_color, is_active)
 		VALUES ($1, $2, NULL, $3, $4, $5, $6, $7)
 		RETURNING id, `+userLabelSQL+`, phone, email, notes, avatar_color, is_active,
-		          (password_hash IS NOT NULL) AS has_password, created_at, updated_at`,
+		          (password_hash IS NOT NULL) AS has_password, is_public, created_at, updated_at`,
 		username, email, name, strings.TrimSpace(in.Phone),
 		strings.TrimSpace(in.Notes), color, active,
 	).Scan(&m.ID, &m.Name, &m.Phone, &m.Email, &m.Notes, &m.AvatarColor,
-		&m.IsActive, &m.HasPassword, &m.CreatedAt, &m.UpdatedAt)
+		&m.IsActive, &m.HasPassword, &m.IsPublic, &m.CreatedAt, &m.UpdatedAt)
 	if err != nil {
 		s.logger.Error("create member", "error", err)
 		writeError(w, http.StatusInternalServerError, "Could not create member")
@@ -186,6 +204,8 @@ func (s *Server) handleGetMember(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "Could not load member")
 		return
 	}
+	viewerID, _ := s.auth.RequestUser(r)
+	s.redactMember(viewerID, s.requestIsAdmin(r), &member)
 	writeJSON(w, http.StatusOK, member)
 }
 
@@ -296,10 +316,10 @@ func (s *Server) loadMember(ctx context.Context, id int64) (models.Member, error
 	var m models.Member
 	err := s.db.QueryRow(ctx, `
 		SELECT id, `+userLabelSQL+`, phone, email, notes, avatar_color, is_active,
-		       (password_hash IS NOT NULL) AS has_password, created_at, updated_at
+		       (password_hash IS NOT NULL) AS has_password, is_public, created_at, updated_at
 		FROM users WHERE id = $1`, id,
 	).Scan(&m.ID, &m.Name, &m.Phone, &m.Email, &m.Notes, &m.AvatarColor,
-		&m.IsActive, &m.HasPassword, &m.CreatedAt, &m.UpdatedAt)
+		&m.IsActive, &m.HasPassword, &m.IsPublic, &m.CreatedAt, &m.UpdatedAt)
 	if err != nil {
 		return models.Member{}, err
 	}

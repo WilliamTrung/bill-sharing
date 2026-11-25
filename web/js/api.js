@@ -128,12 +128,13 @@ const API = (() => {
       return request("GET", "/api/profile");
     },
 
-    updateProfile(displayName, username, email, language) {
+    updateProfile(displayName, username, email, language, isPublic) {
       return request("PUT", "/api/profile", {
         display_name: displayName,
         username,
         email,
         language,
+        is_public: isPublic === true,
       });
     },
 

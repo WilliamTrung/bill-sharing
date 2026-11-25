@@ -12,6 +12,7 @@ type User struct {
 	AvatarColor string    `json:"avatar_color"`
 	IsActive    bool      `json:"is_active"`
 	HasPassword bool      `json:"has_password"`
+	IsPublic    bool      `json:"is_public"`
 	Language    string    `json:"language"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
@@ -31,6 +32,7 @@ type Member struct {
 	AvatarColor string           `json:"avatar_color"`
 	IsActive    bool             `json:"is_active"`
 	HasPassword bool             `json:"has_password"`
+	IsPublic    bool             `json:"is_public"`
 	CreatedAt   time.Time        `json:"created_at"`
 	UpdatedAt   time.Time        `json:"updated_at"`
 	Groups      []MemberGroupRef `json:"groups"`
@@ -47,6 +49,7 @@ type Group struct {
 	Name              string        `json:"name"`
 	InternalSplitType string        `json:"internal_split_type"`
 	IsActive          bool          `json:"is_active"`
+	LeaderUserID      *int64        `json:"leader_user_id,omitempty"`
 	CreatedAt         time.Time     `json:"created_at"`
 	UpdatedAt         time.Time     `json:"updated_at"`
 	Members           []GroupMember `json:"members"`

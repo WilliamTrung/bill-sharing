@@ -4,6 +4,7 @@
   const username = document.getElementById("p-username");
   const email = document.getElementById("p-email");
   const language = document.getElementById("p-language");
+  const isPublic = document.getElementById("p-public");
   const profileSubmit = document.getElementById("profile-submit");
   const profileError = document.getElementById("profile-error");
 
@@ -30,6 +31,7 @@
     username.value = profile.username || "";
     email.value = profile.email || "";
     language.value = profile.language === "vi" ? "vi" : "en";
+    isPublic.checked = profile.is_public === true;
 
     const hasPassword = profile.has_password !== false;
     passwordForm.querySelectorAll("input").forEach((input) => {
@@ -55,7 +57,7 @@
     profileSubmit.disabled = true;
     profileSubmit.textContent = I18n.t("profile.saving");
     try {
-      const profile = await API.updateProfile(name, user, mail, language.value);
+      const profile = await API.updateProfile(name, user, mail, language.value, isPublic.checked);
       fillForm(profile);
       I18n.useDefault(profile.language);
       UI.toast(I18n.t("profile.saved"), "success");

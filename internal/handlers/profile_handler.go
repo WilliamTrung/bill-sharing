@@ -36,6 +36,7 @@ func (s *Server) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
 		Username    string `json:"username"`
 		Email       string `json:"email"`
 		Language    string `json:"language"`
+		IsPublic    *bool  `json:"is_public"`
 	}
 	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -46,6 +47,14 @@ func (s *Server) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
 	username := strings.TrimSpace(body.Username)
 	email := strings.TrimSpace(body.Email)
 	language := strings.ToLower(strings.TrimSpace(body.Language))
+
+	// Keep the stored value when the client did not send the toggle.
+	isPublic := false
+	if body.IsPublic != nil {
+		isPublic = *body.IsPublic
+	} else if current, err := accounts.GetUser(r.Context(), s.db, userID); err == nil {
+		isPublic = current.IsPublic
+	}
 
 	switch {
 	case utf8.RuneCountInString(displayName) < 1:
@@ -82,7 +91,7 @@ func (s *Server) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := accounts.UpdateProfile(r.Context(), s.db, userID, displayName, username, email, language)
+	user, err := accounts.UpdateProfile(r.Context(), s.db, userID, displayName, username, email, language, isPublic)
 	switch {
 	case errors.Is(err, accounts.ErrUsernameTaken):
 		writeError(w, http.StatusConflict, "Username is already taken")
