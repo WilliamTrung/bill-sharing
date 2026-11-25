@@ -16,7 +16,15 @@ cp .env.example .env   # then edit the secrets
 docker compose up -d --build
 ```
 
-The app is published on `APP_PORT` (default `8080`). Postgres data and uploaded receipts live in named volumes (`db-data`, `uploads`).
+The app is published on `APP_HOST_PORT` (default `8080`). Postgres data and uploaded receipts live in named volumes (`db-data`, `uploads`).
+
+## Deploy (MSI cicd-polling)
+
+- Host: **msi**, domain: `http://bill-sharing.williamthanhtrung.id.vn`
+- Secrets: `dev/shared/bill-sharing/secrets/deploy.env` on MSI (see `deploy/deploy.env.example`)
+- One-time edge: `bash deploy/msi-bootstrap.sh` on MSI after the repo is cloned under `/home/tuf/repo/bill-sharing`
+- Release: merge to `main`, tag `vX.Y.Z`, push branch + tag; monitor  
+  `ssh msi "docker logs --tail 300 cicd-polling-job 2>&1 | grep bill-sharing"`
 
 ### Configuration
 
