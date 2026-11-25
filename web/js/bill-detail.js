@@ -336,7 +336,9 @@
       const result = await API.updateShareSettled(cache.bill.id, share.id, action);
       share.is_settled = result.is_settled;
       share.settle_requested_at = result.requested ? new Date().toISOString() : null;
-      renderShares();
+      // The bill completes once every share is settled, so take the new status.
+      if (result.bill_status) cache.bill.status = result.bill_status;
+      renderAll();
       UI.toast(I18n.t("detail.shareUpdated"), "success");
     } catch (err) {
       UI.toast(UI.errorMessage(err), "error");

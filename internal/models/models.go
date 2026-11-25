@@ -68,6 +68,8 @@ type BillSummary struct {
 	CreatedAt        time.Time `json:"created_at"`
 	AttachmentCount  int       `json:"attachment_count"`
 	ParticipantCount int       `json:"participant_count"`
+	// Shares lets the dashboard expand a row without a second request.
+	Shares []SettlementShare `json:"shares"`
 }
 
 type PublicBillSummary struct {
@@ -111,12 +113,26 @@ type SettlementItem struct {
 	BillID           int64  `json:"bill_id"`
 	BillTitle        string `json:"bill_title"`
 	BillDate         string `json:"bill_date"`
+	BillStatus       string `json:"bill_status"`
 	OwedAmountCents  int64  `json:"owed_amount_cents"`
 	Role             string `json:"role"` // "debtor" or "payer"
 	CounterpartyName string `json:"counterparty_name"`
 	Note             string `json:"note"`
 	IsSettled        bool   `json:"is_settled"`
 	Requested        bool   `json:"requested"`
+	// Shares carries every participant on the bill so the UI can show a breakdown.
+	Shares []SettlementShare `json:"shares"`
+}
+
+// SettlementShare is one participant row inside a settlement's breakdown.
+type SettlementShare struct {
+	ShareID         int64  `json:"share_id"`
+	MemberID        int64  `json:"member_id"`
+	MemberName      string `json:"member_name"`
+	OwedAmountCents int64  `json:"owed_amount_cents"`
+	IsSettled       bool   `json:"is_settled"`
+	Requested       bool   `json:"requested"`
+	IsPayer         bool   `json:"is_payer"`
 }
 
 type Attachment struct {

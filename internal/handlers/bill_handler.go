@@ -624,6 +624,7 @@ func (s *Server) handleListBills(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 
 	bills := make([]models.BillSummary, 0)
+	ids := make([]int64, 0)
 	for rows.Next() {
 		var b models.BillSummary
 		var billDate time.Time
@@ -635,12 +636,54 @@ func (s *Server) handleListBills(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		b.BillDate = billDate.Format("2006-01-02")
+		b.Shares = []models.SettlementShare{}
 		bills = append(bills, b)
+		ids = append(ids, b.ID)
 	}
 	if err := rows.Err(); err != nil {
 		writeError(w, http.StatusInternalServerError, "Could not load bills")
 		return
 	}
+
+	if len(ids) > 0 {
+		shareRows, err := s.db.Query(r.Context(), `
+			SELECT s.bill_id, s.id, s.member_id, `+userLabelSQLM+`, s.owed_amount_cents,
+			       s.is_settled, s.settle_requested_at IS NOT NULL,
+			       (b.paid_by_member_id = s.member_id) AS is_payer
+			FROM bill_member_shares s
+			JOIN users m ON m.id = s.member_id
+			JOIN bills b ON b.id = s.bill_id
+			WHERE s.bill_id = ANY($1)
+			ORDER BY s.id`, ids)
+		if err != nil {
+			s.logger.Error("list bill shares", "error", err)
+			writeError(w, http.StatusInternalServerError, "Could not load bills")
+			return
+		}
+		defer shareRows.Close()
+
+		byBill := make(map[int64][]models.SettlementShare, len(ids))
+		for shareRows.Next() {
+			var billID int64
+			var sh models.SettlementShare
+			if err := shareRows.Scan(&billID, &sh.ShareID, &sh.MemberID, &sh.MemberName,
+				&sh.OwedAmountCents, &sh.IsSettled, &sh.Requested, &sh.IsPayer); err != nil {
+				writeError(w, http.StatusInternalServerError, "Could not load bills")
+				return
+			}
+			byBill[billID] = append(byBill[billID], sh)
+		}
+		if err := shareRows.Err(); err != nil {
+			writeError(w, http.StatusInternalServerError, "Could not load bills")
+			return
+		}
+		for i := range bills {
+			if shares, ok := byBill[bills[i].ID]; ok {
+				bills[i].Shares = shares
+			}
+		}
+	}
+
 	writeJSON(w, http.StatusOK, bills)
 }
 
@@ -771,6 +814,27 @@ func (s *Server) handleUpdateBillStatus(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, map[string]string{"status": status})
 }
 
+// syncBillStatus recomputes a bill's status from its shares: once every share is
+// settled the bill is SETTLED, and any outstanding share reopens it.
+func (s *Server) syncBillStatus(ctx context.Context, billID int64) (string, error) {
+	var total, settled int
+	if err := s.db.QueryRow(ctx, `
+		SELECT COUNT(*), COUNT(*) FILTER (WHERE is_settled)
+		FROM bill_member_shares WHERE bill_id = $1`, billID).Scan(&total, &settled); err != nil {
+		return "", fmt.Errorf("count shares: %w", err)
+	}
+
+	status := "OPEN"
+	if total > 0 && settled == total {
+		status = "SETTLED"
+	}
+	if _, err := s.db.Exec(ctx, `
+		UPDATE bills SET status = $1 WHERE id = $2 AND status <> $1`, status, billID); err != nil {
+		return "", fmt.Errorf("update bill status: %w", err)
+	}
+	return status, nil
+}
+
 // handleUpdateShareSettled records settlement state for one share. Two actors are
 // involved: the debtor may "request" that they have paid (action=request), and the
 // bill's payer approves or rejects it (action=settle / action=reject).
@@ -871,7 +935,12 @@ func (s *Server) handleUpdateShareSettled(w http.ResponseWriter, r *http.Request
 			writeError(w, http.StatusInternalServerError, "Could not update share")
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"is_settled": next, "requested": false})
+		// The bill is only complete once every share is settled.
+		billStatus, err := s.syncBillStatus(ctx, billID)
+		if err != nil {
+			s.logger.Error("sync bill status", "error", err)
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"is_settled": next, "requested": false, "bill_status": billStatus})
 
 	default:
 		writeError(w, http.StatusBadRequest, "action must be request, settle, reject or reopen")
@@ -1024,8 +1093,9 @@ func (s *Server) handleDeleteBill(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleSettlements lists the shares that concern the caller: money they still owe
-// (role=debtor) and shares awaiting their confirmation as the payer (role=payer).
+// handleSettlements lists the shares that concern the caller (money they still owe,
+// or shares awaiting their confirmation as the payer) and attaches each bill's full
+// participant breakdown so the dashboard can expand a row.
 func (s *Server) handleSettlements(w http.ResponseWriter, r *http.Request) {
 	viewerID, ok := s.auth.RequestUser(r)
 	if !ok {
@@ -1033,8 +1103,9 @@ func (s *Server) handleSettlements(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := s.db.Query(r.Context(), `
-		SELECT s.id, b.id, b.title, b.bill_date, s.owed_amount_cents, s.is_settled,
+	ctx := r.Context()
+	rows, err := s.db.Query(ctx, `
+		SELECT s.id, b.id, b.title, b.bill_date, b.status, s.owed_amount_cents, s.is_settled,
 		       s.settle_requested_at IS NOT NULL,
 		       CASE WHEN s.member_id = $1 THEN 'debtor' ELSE 'payer' END AS role,
 		       `+userLabelSQLM+` AS debtor_name,
@@ -1057,21 +1128,65 @@ func (s *Server) handleSettlements(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 
 	items := make([]models.SettlementItem, 0)
+	billIDs := make([]int64, 0)
 	for rows.Next() {
 		var it models.SettlementItem
 		var billDate time.Time
-		if err := rows.Scan(&it.ShareID, &it.BillID, &it.BillTitle, &billDate, &it.OwedAmountCents,
-			&it.IsSettled, &it.Requested, &it.Role, &it.CounterpartyName, &it.Note); err != nil {
+		if err := rows.Scan(&it.ShareID, &it.BillID, &it.BillTitle, &billDate, &it.BillStatus,
+			&it.OwedAmountCents, &it.IsSettled, &it.Requested, &it.Role, &it.CounterpartyName, &it.Note); err != nil {
 			writeError(w, http.StatusInternalServerError, "Could not load settlements")
 			return
 		}
 		it.BillDate = billDate.Format("2006-01-02")
+		it.Shares = []models.SettlementShare{}
 		items = append(items, it)
+		billIDs = append(billIDs, it.BillID)
 	}
 	if err := rows.Err(); err != nil {
 		writeError(w, http.StatusInternalServerError, "Could not load settlements")
 		return
 	}
+
+	if len(billIDs) > 0 {
+		// One query for every participant across the listed bills.
+		shareRows, err := s.db.Query(ctx, `
+			SELECT s.bill_id, s.id, s.member_id, `+userLabelSQLM+`, s.owed_amount_cents,
+			       s.is_settled, s.settle_requested_at IS NOT NULL,
+			       (b.paid_by_member_id = s.member_id) AS is_payer
+			FROM bill_member_shares s
+			JOIN users m ON m.id = s.member_id
+			JOIN bills b ON b.id = s.bill_id
+			WHERE s.bill_id = ANY($1)
+			ORDER BY s.id`, billIDs)
+		if err != nil {
+			s.logger.Error("list settlement shares", "error", err)
+			writeError(w, http.StatusInternalServerError, "Could not load settlements")
+			return
+		}
+		defer shareRows.Close()
+
+		byBill := make(map[int64][]models.SettlementShare, len(billIDs))
+		for shareRows.Next() {
+			var billID int64
+			var sh models.SettlementShare
+			if err := shareRows.Scan(&billID, &sh.ShareID, &sh.MemberID, &sh.MemberName,
+				&sh.OwedAmountCents, &sh.IsSettled, &sh.Requested, &sh.IsPayer); err != nil {
+				writeError(w, http.StatusInternalServerError, "Could not load settlements")
+				return
+			}
+			byBill[billID] = append(byBill[billID], sh)
+		}
+		if err := shareRows.Err(); err != nil {
+			writeError(w, http.StatusInternalServerError, "Could not load settlements")
+			return
+		}
+		for i := range items {
+			if shares, ok := byBill[items[i].BillID]; ok {
+				items[i].Shares = shares
+			}
+		}
+	}
+
 	writeJSON(w, http.StatusOK, items)
 }
 

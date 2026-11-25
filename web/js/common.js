@@ -278,7 +278,13 @@ const Shares = (() => {
         UI.el(
           "td",
           "right",
-          I18n.t(share.is_settled ? "detail.shareSettled" : "detail.shareOpen")
+          I18n.t(
+            share.is_payer
+              ? "detail.payerPaid"
+              : share.is_settled
+                ? "detail.shareSettled"
+                : "detail.shareOpen"
+          )
         )
       );
       total += BigInt(share.owed_amount_cents);
@@ -295,7 +301,10 @@ const Shares = (() => {
     return wrap;
   }
 
-  function mount(toggleCell, row, colspan, billId, loader) {
+  function mount(toggleCell, row, colspan, billId, loader, preloadedShares) {
+    // The dropdown row is inserted beside this one, so it must already be attached.
+    if (!row.parentNode) return;
+
     const detailRow = document.createElement("tr");
     detailRow.className = "shares-row hidden";
     const detailCell = document.createElement("td");
@@ -311,7 +320,12 @@ const Shares = (() => {
     button.textContent = "▸";
     toggleCell.appendChild(button);
 
+    // Shares already attached to the list response avoid an extra request.
     let loaded = false;
+    if (Array.isArray(preloadedShares) && preloadedShares.length > 0) {
+      detailCell.replaceChildren(buildTable({ member_shares: preloadedShares }));
+      loaded = true;
+    }
     let expanded = false;
 
     function setExpanded(next) {

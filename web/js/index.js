@@ -145,7 +145,7 @@
       row.appendChild(UI.el("td", "right num strong", Money.format(bill.total_amount_cents)));
 
       billsBody.appendChild(row);
-      Shares.mount(toggleCell, row, 7, bill.id, API.getBill);
+      Shares.mount(toggleCell, row, 7, bill.id, API.getBill, bill.shares);
     }
     Rows.apply(billsBody);
   }
@@ -174,8 +174,11 @@
     try {
       await API.updateShareSettled(item.bill_id, item.share_id, action);
       UI.toast(I18n.t("index.settleUpdated"), "success");
-      cache.settlements = await API.settlements();
-      renderSettlements(cache.settlements);
+      // Re-read both lists: settling can complete the bill and change its status.
+      const [bills, settlements] = await Promise.all([API.listBills(), API.settlements()]);
+      cache.bills = bills;
+      cache.settlements = settlements;
+      renderAll();
     } catch (err) {
       UI.toast(UI.errorMessage(err), "error");
     }
@@ -192,6 +195,10 @@
     for (const item of items) {
       const row = document.createElement("tr");
       row.dataset.href = `/bill-detail.html?id=${item.bill_id}`;
+
+      const toggleCell = document.createElement("td");
+      toggleCell.addEventListener("click", (event) => event.stopPropagation());
+      row.appendChild(toggleCell);
 
       const titleCell = document.createElement("td");
       titleCell.appendChild(UI.el("div", "strong", item.bill_title));
@@ -236,6 +243,8 @@
       actionCell.appendChild(wrap);
       row.appendChild(actionCell);
       settleBody.appendChild(row);
+      // Mount after insertion: the dropdown row is inserted next to this one.
+      Shares.mount(toggleCell, row, 6, item.bill_id, API.getBill, item.shares);
     }
     Rows.apply(settleBody);
   }
