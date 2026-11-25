@@ -94,4 +94,4 @@ Overlapping selections are rejected server-side with HTTP 400 and disabled clien
 
 `POST /api/bills` accepts `multipart/form-data` with a `payload` JSON field and up to 10 `files` (JPEG, PNG, WebP, PDF; MIME sniffed server-side, stored under random names).
 
-All `/api` and `/uploads` routes require a valid session; HTML pages redirect to `/login.html` when signed out.
+All `/api` and `/uploads` routes require a valid session. The public home page is `/`; the bills dashboard is `/dashboard.html`; members and groups live at `/admin`. Other HTML pages redirect to `/login.html` when signed out.

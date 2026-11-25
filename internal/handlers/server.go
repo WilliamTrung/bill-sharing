@@ -87,21 +87,58 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
-	name := strings.TrimPrefix(path.Clean("/"+r.URL.Path), "/")
-	if name == "" {
-		name = "index.html"
+func legacyStaticRedirect(urlPath string) (string, bool) {
+	p := strings.TrimSuffix(path.Clean("/"+urlPath), "/")
+	switch p {
+	case "/admin.html":
+		return "/admin", true
+	default:
+		return "", false
+	}
+}
+
+func resolveStaticFile(urlPath string) (string, bool) {
+	name := strings.TrimPrefix(path.Clean("/"+urlPath), "/")
+	if name == "" || name == "." {
+		return "index.html", true
 	}
 	if strings.HasSuffix(name, "/") {
+		return "", false
+	}
+	switch name {
+	case "admin":
+		return "admin/index.html", true
+	}
+	return name, true
+}
+
+func staticPageRequiresAuth(file string) bool {
+	if !strings.HasSuffix(file, ".html") {
+		return false
+	}
+	switch file {
+	case "index.html", "login.html":
+		return false
+	default:
+		return true
+	}
+}
+
+func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
+	if redirect, ok := legacyStaticRedirect(r.URL.Path); ok {
+		http.Redirect(w, r, redirect, http.StatusMovedPermanently)
+		return
+	}
+
+	name, ok := resolveStaticFile(r.URL.Path)
+	if !ok {
 		http.NotFound(w, r)
 		return
 	}
 
-	if (name == "index.html" || strings.HasSuffix(name, ".html")) && name != "login.html" {
-		if !s.auth.RequestValid(r) {
-			http.Redirect(w, r, "/login.html", http.StatusFound)
-			return
-		}
+	if staticPageRequiresAuth(name) && !s.auth.RequestValid(r) {
+		http.Redirect(w, r, "/login.html", http.StatusFound)
+		return
 	}
 
 	data, err := fs.ReadFile(s.webFS, name)

@@ -57,7 +57,8 @@ const API = (() => {
   }
 
   function redirectToLogin() {
-    if (!window.location.pathname.endsWith("/login.html")) {
+    const path = window.location.pathname.replace(/\/$/, "") || "/";
+    if (path !== "/login.html" && path !== "/") {
       window.location.replace("/login.html");
     }
   }

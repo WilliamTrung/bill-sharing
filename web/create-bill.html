@@ -9,11 +9,11 @@
   <body>
     <header class="topbar">
       <div class="shell topbar-inner">
-        <a class="brand" href="/" data-i18n="app.name">Bill Sharing</a>
+        <a class="brand" href="/dashboard.html" data-i18n="app.name">Bill Sharing</a>
         <nav class="nav" data-i18n-aria-label="nav.primary" aria-label="Primary">
-          <a href="/" data-nav data-i18n="nav.bills">Bills</a>
+          <a href="/dashboard.html" data-nav data-i18n="nav.bills">Bills</a>
           <a href="/create-bill.html" data-nav data-i18n="nav.newBill">New bill</a>
-          <a href="/admin.html" data-nav data-i18n="nav.admin">Members &amp; groups</a>
+          <a href="/admin" data-nav data-i18n="nav.admin">Members &amp; groups</a>
         </nav>
         <div class="topbar-actions">
           <div data-lang-switcher></div>
@@ -30,7 +30,7 @@
           <p class="sub" data-i18n="bill.sub">Pick who shares it, choose how to split, and attach the receipts.</p>
         </div>
         <div class="head-actions">
-          <a class="btn btn-ghost" href="/" data-i18n="action.cancel">Cancel</a>
+          <a class="btn btn-ghost" href="/dashboard.html" data-i18n="action.cancel">Cancel</a>
         </div>
       </div>
 
@@ -106,7 +106,7 @@
           <div class="checkbox-list" id="participants"></div>
           <div class="empty hidden" id="participants-empty">
             <span data-i18n="bill.noActiveMembers">No active members yet.</span>
-            <a href="/admin.html" data-i18n="bill.addMembersFirst">Add members first</a>.
+            <a href="/admin" data-i18n="bill.addMembersFirst">Add members first</a>.
           </div>
         </section>
 

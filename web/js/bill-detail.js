@@ -203,7 +203,7 @@
     try {
       await API.deleteBill(bill.id);
       UI.toast(I18n.t("detail.deleted"), "success");
-      window.location.replace("/");
+      window.location.replace("/dashboard.html");
     } catch (err) {
       UI.toast(UI.errorMessage(err), "error");
       deleteBtn.disabled = false;
@@ -225,7 +225,7 @@
     async onReady() {
       if (!billId) {
         UI.toast(I18n.t("detail.notFound"), "error");
-        window.location.replace("/");
+        window.location.replace("/dashboard.html");
         return;
       }
       cache.bill = await API.getBill(billId);

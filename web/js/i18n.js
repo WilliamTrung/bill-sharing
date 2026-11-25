@@ -42,6 +42,12 @@ const I18n = (() => {
     "unit.participant": "participant",
     "unit.participants": "participants",
 
+    "home.docTitle": "Bill Sharing",
+    "home.heading": "Split shared expenses with your group",
+    "home.sub": "Track bills, net balances, and receipt attachments for couples, families, and housemates.",
+    "home.adminNote": "Sign in to manage bills and open the admin area at /admin for members and groups.",
+    "home.signIn": "Sign in",
+
     "login.docTitle": "Sign in · Bill Sharing",
     "login.heading": "Admin sign in",
     "login.sub": "Enter the admin password to manage members, groups and bills.",
@@ -69,7 +75,7 @@ const I18n = (() => {
     "index.paid": "Paid",
     "index.owed": "Owed",
     "index.net": "Net",
-    "index.noMembers": "No members yet. Add members on the Members & groups page.",
+    "index.noMembers": "No members yet. Add members on the /admin page.",
     "index.billHistory": "Bill history",
     "index.billHistoryHint": "Newest expenses first.",
     "index.bill": "Bill",
@@ -256,6 +262,12 @@ const I18n = (() => {
     "unit.participant": "người tham gia",
     "unit.participants": "người tham gia",
 
+    "home.docTitle": "Chia Hoá Đơn",
+    "home.heading": "Chia chi phí chung trong nhóm",
+    "home.sub": "Ghi nhận hoá đơn, số dư ròng và ảnh chứng từ cho cặp đôi, gia đình và nhóm bạn.",
+    "home.adminNote": "Đăng nhập để quản lý hoá đơn và mở khu vực quản trị tại /admin cho thành viên và nhóm.",
+    "home.signIn": "Đăng nhập",
+
     "login.docTitle": "Đăng nhập · Chia Hoá Đơn",
     "login.heading": "Đăng nhập quản trị",
     "login.sub": "Nhập mật khẩu quản trị để quản lý thành viên, nhóm và hoá đơn.",
@@ -283,7 +295,7 @@ const I18n = (() => {
     "index.paid": "Đã trả",
     "index.owed": "Còn nợ",
     "index.net": "Ròng",
-    "index.noMembers": "Chưa có thành viên. Hãy thêm thành viên ở trang Thành viên & nhóm.",
+    "index.noMembers": "Chưa có thành viên. Hãy thêm thành viên tại trang /admin.",
     "index.billHistory": "Lịch sử hoá đơn",
     "index.billHistoryHint": "Chi phí mới nhất trước.",
     "index.bill": "Hoá đơn",

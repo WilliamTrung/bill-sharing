@@ -2,10 +2,10 @@
 
 const Chrome = (() => {
   function markActiveNav() {
-    const here = window.location.pathname.split("/").pop() || "index.html";
+    const here = window.location.pathname.replace(/\/$/, "") || "/";
     document.querySelectorAll("[data-nav]").forEach((link) => {
-      const target = link.getAttribute("href") || "";
-      if (target.endsWith(here)) {
+      const target = (link.getAttribute("href") || "").replace(/\/$/, "") || "/";
+      if (target === here) {
         link.classList.add("active");
         link.setAttribute("aria-current", "page");
       }

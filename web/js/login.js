@@ -26,7 +26,7 @@
     submit.textContent = I18n.t("login.signingIn");
     try {
       await API.login(password);
-      window.location.replace("/");
+      window.location.replace("/dashboard.html");
     } catch (err) {
       showError(err.message || I18n.t("login.errFailed"));
       input.select();
