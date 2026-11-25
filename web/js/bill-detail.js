@@ -150,6 +150,27 @@
 
       row.appendChild(UI.el("td", "right num strong", Money.format(share.owed_amount_cents)));
       total += BigInt(share.owed_amount_cents);
+
+      // Per-share settle control, only meaningful for signed-in users.
+      const actionCell = document.createElement("td");
+      actionCell.className = "right";
+      if (state.authenticated) {
+        const settled = share.is_settled === true;
+        const pill = UI.el(
+          "span",
+          `pill ${settled ? "pill-accent" : "pill-warn"}`,
+          I18n.t(settled ? "detail.shareSettled" : "detail.shareOpen")
+        );
+        const button = UI.el("button", "btn btn-quiet btn-sm", I18n.t(settled ? "detail.shareMarkOpen" : "detail.shareMarkSettled"));
+        button.type = "button";
+        button.addEventListener("click", () => toggleShareSettled(share, button));
+        const wrap = UI.el("div", "inline");
+        wrap.appendChild(pill);
+        wrap.appendChild(button);
+        actionCell.appendChild(wrap);
+      }
+      row.appendChild(actionCell);
+
       sharesBody.appendChild(row);
     }
 
@@ -228,6 +249,20 @@
     renderParticipants();
     renderShares();
     renderGallery();
+  }
+
+  async function toggleShareSettled(share, button) {
+    const next = share.is_settled !== true;
+    button.disabled = true;
+    try {
+      const result = await API.updateShareSettled(cache.bill.id, share.id, next);
+      share.is_settled = result.is_settled;
+      renderShares();
+      UI.toast(I18n.t("detail.shareUpdated"), "success");
+    } catch (err) {
+      UI.toast(UI.errorMessage(err), "error");
+      button.disabled = false;
+    }
   }
 
   async function toggleStatus() {

@@ -173,6 +173,10 @@ const API = (() => {
       return request("PUT", `/api/bills/${id}/status`, { status });
     },
 
+    updateShareSettled(billId, shareId, settled) {
+      return request("PUT", `/api/bills/${billId}/shares/${shareId}/settled`, { settled });
+    },
+
     listMembers() {
       return request("GET", "/api/members");
     },

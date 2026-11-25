@@ -72,9 +72,6 @@
       memberCell.appendChild(person);
       row.appendChild(memberCell);
 
-      row.appendChild(UI.el("td", "right num muted", Money.format(balance.paid_cents)));
-      row.appendChild(UI.el("td", "right num muted", Money.format(balance.owed_cents)));
-
       const net = BigInt(balance.net_cents);
       const netCell = UI.el("td", "right num strong");
       netCell.textContent = Money.format(net, { signed: true });
@@ -96,8 +93,14 @@
 
     for (const bill of bills) {
       const row = document.createElement("tr");
+      row.className = "bill-row";
+      row.dataset.href = `/bill-detail.html?id=${bill.id}`;
+      row.tabIndex = 0;
+      row.setAttribute("role", "link");
 
       const toggleCell = document.createElement("td");
+      // Keep the shares toggle from triggering the row navigation.
+      toggleCell.addEventListener("click", (event) => event.stopPropagation());
       row.appendChild(toggleCell);
 
       const titleCell = document.createElement("td");
@@ -142,6 +145,7 @@
       billsBody.appendChild(row);
       Shares.mount(toggleCell, row, 7, bill.id, API.getBill);
     }
+    Rows.apply(billsBody);
   }
 
   function renderAll() {

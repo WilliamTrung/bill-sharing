@@ -77,8 +77,14 @@
 
     for (const bill of bills) {
       const row = document.createElement("tr");
+      row.className = "bill-row";
+      row.dataset.href = `/bill-detail.html?id=${bill.id}`;
+      row.tabIndex = 0;
+      row.setAttribute("role", "link");
 
       const toggleCell = document.createElement("td");
+      // Stop the row click from navigating when the shares toggle is used.
+      toggleCell.addEventListener("click", (event) => event.stopPropagation());
       row.appendChild(toggleCell);
 
       const titleCell = document.createElement("td");
@@ -115,6 +121,7 @@
       billsBody.appendChild(row);
       Shares.mount(toggleCell, row, 7, bill.id, API.publicBill);
     }
+    Rows.apply(billsBody);
   }
 
   function renderFilters() {

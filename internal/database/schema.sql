@@ -84,6 +84,9 @@ CREATE TABLE IF NOT EXISTS bill_member_shares (
     owed_amount_cents BIGINT NOT NULL CHECK (owed_amount_cents >= 0)
 );
 
+-- A single member's share can be settled while the bill stays open.
+ALTER TABLE bill_member_shares ADD COLUMN IF NOT EXISTS is_settled BOOLEAN NOT NULL DEFAULT FALSE;
+
 CREATE TABLE IF NOT EXISTS bill_attachments (
     id BIGSERIAL PRIMARY KEY,
     bill_id BIGINT NOT NULL REFERENCES bills(id) ON DELETE CASCADE,

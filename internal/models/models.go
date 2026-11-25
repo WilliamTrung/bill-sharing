@@ -100,6 +100,7 @@ type BillMemberShare struct {
 	MemberName      string `json:"member_name"`
 	SourceGroupID   *int64 `json:"source_group_id,omitempty"`
 	OwedAmountCents int64  `json:"owed_amount_cents"`
+	IsSettled       bool   `json:"is_settled"`
 }
 
 type Attachment struct {

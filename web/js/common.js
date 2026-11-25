@@ -1,4 +1,6 @@
-(window.I18n ? I18n.init() : null);
+// `const I18n` is a global lexical binding, not a window property, so check the
+// identifier itself rather than window.I18n.
+(typeof I18n !== "undefined" ? I18n.init() : null);
 
 const Chrome = (() => {
   function markActiveNav() {
@@ -9,6 +11,50 @@ const Chrome = (() => {
         link.classList.add("active");
         link.setAttribute("aria-current", "page");
       }
+    });
+  }
+
+  // mountNavToggle adds a hamburger that collapses the header nav on narrow
+  // screens, so links never wrap onto a second line.
+  function mountNavToggle() {
+    document.querySelectorAll(".topbar-inner").forEach((bar) => {
+      const nav = bar.querySelector(".nav");
+      if (!nav || bar.querySelector(".nav-toggle")) return;
+
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "nav-toggle";
+      btn.setAttribute("aria-expanded", "false");
+      btn.setAttribute("aria-controls", nav.id || "");
+      btn.setAttribute("data-i18n-aria-label", "nav.toggle");
+      btn.innerHTML = "<span></span><span></span><span></span>";
+
+      const close = () => {
+        nav.classList.remove("open");
+        btn.setAttribute("aria-expanded", "false");
+        btn.classList.remove("open");
+      };
+
+      btn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const open = !nav.classList.contains("open");
+        nav.classList.toggle("open", open);
+        btn.classList.toggle("open", open);
+        btn.setAttribute("aria-expanded", String(open));
+      });
+
+      // Collapse when a link is followed or the user clicks elsewhere.
+      nav.addEventListener("click", (event) => {
+        if (event.target.closest("a")) close();
+      });
+      document.addEventListener("click", (event) => {
+        if (!bar.contains(event.target)) close();
+      });
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") close();
+      });
+
+      nav.parentNode.insertBefore(btn, nav);
     });
   }
 
@@ -40,7 +86,7 @@ const Chrome = (() => {
     } catch (err) {
       if (err.status === 401) return;
     }
-    if (window.I18n) {
+    if (typeof I18n !== "undefined") {
       const session = await API.currentSession();
       if (session && session.language) {
         I18n.useDefault(session.language);
@@ -49,6 +95,7 @@ const Chrome = (() => {
       I18n.onChange(() => rerender());
     }
     markActiveNav();
+    mountNavToggle();
     wireLogout();
     if (opts.onReady) {
       try {
@@ -62,6 +109,32 @@ const Chrome = (() => {
   }
 
   return { start };
+})();
+
+const Rows = (() => {
+  // makeClickable turns a table row into a link on the whole surface, while
+  // leaving controls inside it (links, buttons, the shares toggle) to themselves.
+  function makeClickable(row) {
+    const href = row.dataset.href;
+    if (!href) return;
+
+    const go = () => window.location.assign(href);
+    row.addEventListener("click", (event) => {
+      if (event.target.closest("a, button, input, select, textarea, label")) return;
+      go();
+    });
+    row.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" || event.target !== row) return;
+      event.preventDefault();
+      go();
+    });
+  }
+
+  function apply(root) {
+    (root || document).querySelectorAll("tr[data-href]").forEach(makeClickable);
+  }
+
+  return { apply, makeClickable };
 })();
 
 const Shares = (() => {
@@ -86,6 +159,7 @@ const Shares = (() => {
     headRow.appendChild(UI.el("th", "", I18n.t("shares.member")));
     headRow.appendChild(UI.el("th", "", I18n.t("shares.source")));
     headRow.appendChild(UI.el("th", "right", I18n.t("shares.amount")));
+    headRow.appendChild(UI.el("th", "right", I18n.t("detail.settle")));
     head.appendChild(headRow);
     table.appendChild(head);
 
@@ -111,6 +185,13 @@ const Shares = (() => {
       row.appendChild(sourceCell);
 
       row.appendChild(UI.el("td", "right num strong", Money.format(share.owed_amount_cents)));
+      row.appendChild(
+        UI.el(
+          "td",
+          "right",
+          I18n.t(share.is_settled ? "detail.shareSettled" : "detail.shareOpen")
+        )
+      );
       total += BigInt(share.owed_amount_cents);
       body.appendChild(row);
     }

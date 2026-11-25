@@ -91,6 +91,7 @@ func (s *Server) routes() {
 	s.mux.Handle("POST /api/bills", s.requireAuth(http.HandlerFunc(s.handleCreateBill)))
 	s.mux.Handle("GET /api/bills/{id}", s.requireAuth(http.HandlerFunc(s.handleGetBill)))
 	s.mux.Handle("PUT /api/bills/{id}/status", s.requireAuth(http.HandlerFunc(s.handleUpdateBillStatus)))
+	s.mux.Handle("PUT /api/bills/{id}/shares/{shareID}/settled", s.requireAuth(http.HandlerFunc(s.handleUpdateShareSettled)))
 	s.mux.Handle("DELETE /api/bills/{id}", s.requireAuth(http.HandlerFunc(s.handleDeleteBill)))
 
 	s.mux.Handle("GET /api/balances", s.requireAuth(http.HandlerFunc(s.handleBalances)))

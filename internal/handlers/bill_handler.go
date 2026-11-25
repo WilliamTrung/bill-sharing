@@ -752,6 +752,45 @@ func (s *Server) handleUpdateBillStatus(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, map[string]string{"status": status})
 }
 
+// handleUpdateShareSettled marks a single member's share paid or unpaid without
+// touching the rest of the bill.
+func (s *Server) handleUpdateShareSettled(w http.ResponseWriter, r *http.Request) {
+	billID, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	shareID, ok := pathID(w, r, "shareID")
+	if !ok {
+		return
+	}
+
+	var body struct {
+		Settled *bool `json:"settled"`
+	}
+	if err := readJSON(w, r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if body.Settled == nil {
+		writeError(w, http.StatusBadRequest, "settled is required")
+		return
+	}
+
+	tag, err := s.db.Exec(r.Context(), `
+		UPDATE bill_member_shares SET is_settled = $1
+		WHERE id = $2 AND bill_id = $3`, *body.Settled, shareID, billID)
+	if err != nil {
+		s.logger.Error("update share settled", "error", err)
+		writeError(w, http.StatusInternalServerError, "Could not update share")
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		writeError(w, http.StatusNotFound, "Share not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"is_settled": *body.Settled})
+}
+
 func (s *Server) handleGetBill(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r, "id")
 	if !ok {
@@ -821,7 +860,7 @@ func (s *Server) loadBill(ctx context.Context, id int64) (models.Bill, error) {
 	}
 
 	shareRows, err := s.db.Query(ctx, `
-		SELECT s.id, s.member_id, `+userLabelSQLM+`, s.source_group_id, s.owed_amount_cents
+		SELECT s.id, s.member_id, `+userLabelSQLM+`, s.source_group_id, s.owed_amount_cents, s.is_settled
 		FROM bill_member_shares s
 		JOIN users m ON m.id = s.member_id
 		WHERE s.bill_id = $1
@@ -833,7 +872,7 @@ func (s *Server) loadBill(ctx context.Context, id int64) (models.Bill, error) {
 		var share models.BillMemberShare
 		var sourceGroupID *int64
 		if err := shareRows.Scan(&share.ID, &share.MemberID, &share.MemberName, &sourceGroupID,
-			&share.OwedAmountCents); err != nil {
+			&share.OwedAmountCents, &share.IsSettled); err != nil {
 			shareRows.Close()
 			return models.Bill{}, err
 		}
