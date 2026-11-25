@@ -8,10 +8,12 @@ const I18n = (() => {
     "app.eyebrow.overview": "Overview",
     "app.eyebrow.admin": "Admin",
     "app.eyebrow.newExpense": "New expense",
+    "app.eyebrow.account": "Account",
 
     "nav.bills": "Bills",
     "nav.newBill": "New bill",
     "nav.admin": "Members & groups",
+    "nav.profile": "Profile",
     "nav.signOut": "Sign out",
     "nav.switchLanguage": "Switch language",
     "nav.primary": "Primary",
@@ -69,6 +71,37 @@ const I18n = (() => {
     "shares.hide": "Hide member shares",
     "shares.none": "No member shares recorded for this bill.",
 
+    "profile.docTitle": "Profile · Bill Sharing",
+    "profile.heading": "Your profile",
+    "profile.sub": "Update the name others see, how you sign in, and your password.",
+    "profile.details": "Profile details",
+    "profile.detailsHint": "Your display name, sign-in username and email.",
+    "profile.displayName": "Display name",
+    "profile.displayNameHint": "Shown on bills, balances and the members list.",
+    "profile.username": "Username",
+    "profile.usernameHint": "You can sign in with this or your email.",
+    "profile.email": "Email",
+    "profile.language": "Default language",
+    "profile.languageHint": "Used when you open the app on a device that has no language picked yet.",
+    "profile.langEn": "English",
+    "profile.langVi": "Tiếng Việt",
+    "profile.save": "Save changes",
+    "profile.saving": "Saving…",
+    "profile.saved": "Profile updated.",
+    "profile.errRequired": "Fill in display name, username and email.",
+    "profile.passwordTitle": "Change password",
+    "profile.passwordHint": "Use at least 8 characters.",
+    "profile.currentPassword": "Current password",
+    "profile.newPassword": "New password",
+    "profile.confirmPassword": "Confirm new password",
+    "profile.changePassword": "Change password",
+    "profile.changing": "Changing…",
+    "profile.passwordChanged": "Password changed.",
+    "profile.passwordUnavailable": "This account has no password yet, so it cannot change one.",
+    "profile.errPasswordRequired": "Enter your current and new password.",
+    "profile.errMismatch": "The new passwords do not match.",
+    "profile.errTooShort": "The new password must be at least 8 characters.",
+
     "login.docTitle": "Sign in · Bill Sharing",
     "login.heading": "Sign in",
     "login.sub": "Sign in to add bills and manage members and groups.",
@@ -81,6 +114,9 @@ const I18n = (() => {
     "login.errFailed": "Could not sign in.",
     "server.authRequired": "Authentication required",
     "server.invalidCredentials": "Incorrect username, email or password",
+    "server.currentPasswordWrong": "Current password is incorrect",
+    "server.usernameTaken": "Username is already taken",
+    "server.emailTaken": "Email is already in use",
     "server.tooManyAttempts": "Too many attempts. Try again later.",
 
     "index.docTitle": "Dashboard · Bill Sharing",
@@ -256,10 +292,12 @@ const I18n = (() => {
     "app.eyebrow.overview": "Tổng quan",
     "app.eyebrow.admin": "Quản trị",
     "app.eyebrow.newExpense": "Chi phí mới",
+    "app.eyebrow.account": "Tài khoản",
 
     "nav.bills": "Hoá đơn",
     "nav.newBill": "Tạo hoá đơn",
     "nav.admin": "Thành viên & nhóm",
+    "nav.profile": "Hồ sơ",
     "nav.signOut": "Đăng xuất",
     "nav.switchLanguage": "Đổi ngôn ngữ",
     "nav.primary": "Chính",
@@ -317,6 +355,37 @@ const I18n = (() => {
     "shares.hide": "Ẩn phần của từng thành viên",
     "shares.none": "Hoá đơn này chưa có phần chia nào.",
 
+    "profile.docTitle": "Hồ sơ · Chia Hoá Đơn",
+    "profile.heading": "Hồ sơ của bạn",
+    "profile.sub": "Cập nhật tên hiển thị, cách đăng nhập và mật khẩu của bạn.",
+    "profile.details": "Thông tin hồ sơ",
+    "profile.detailsHint": "Tên hiển thị, tên đăng nhập và email của bạn.",
+    "profile.displayName": "Tên hiển thị",
+    "profile.displayNameHint": "Hiển thị trên hoá đơn, số dư và danh sách thành viên.",
+    "profile.username": "Tên đăng nhập",
+    "profile.usernameHint": "Bạn có thể đăng nhập bằng tên này hoặc email.",
+    "profile.email": "Email",
+    "profile.language": "Ngôn ngữ mặc định",
+    "profile.languageHint": "Dùng khi bạn mở ứng dụng trên thiết bị chưa chọn ngôn ngữ.",
+    "profile.langEn": "English",
+    "profile.langVi": "Tiếng Việt",
+    "profile.save": "Lưu thay đổi",
+    "profile.saving": "Đang lưu…",
+    "profile.saved": "Đã cập nhật hồ sơ.",
+    "profile.errRequired": "Vui lòng nhập tên hiển thị, tên đăng nhập và email.",
+    "profile.passwordTitle": "Đổi mật khẩu",
+    "profile.passwordHint": "Dùng ít nhất 8 ký tự.",
+    "profile.currentPassword": "Mật khẩu hiện tại",
+    "profile.newPassword": "Mật khẩu mới",
+    "profile.confirmPassword": "Nhập lại mật khẩu mới",
+    "profile.changePassword": "Đổi mật khẩu",
+    "profile.changing": "Đang đổi…",
+    "profile.passwordChanged": "Đã đổi mật khẩu.",
+    "profile.passwordUnavailable": "Tài khoản này chưa có mật khẩu nên không thể đổi.",
+    "profile.errPasswordRequired": "Vui lòng nhập mật khẩu hiện tại và mật khẩu mới.",
+    "profile.errMismatch": "Mật khẩu mới không khớp.",
+    "profile.errTooShort": "Mật khẩu mới phải có ít nhất 8 ký tự.",
+
     "login.docTitle": "Đăng nhập · Chia Hoá Đơn",
     "login.heading": "Đăng nhập",
     "login.sub": "Đăng nhập để thêm hoá đơn và quản lý thành viên, nhóm.",
@@ -329,6 +398,9 @@ const I18n = (() => {
     "login.errFailed": "Không thể đăng nhập.",
     "server.authRequired": "Yêu cầu đăng nhập",
     "server.invalidCredentials": "Sai tên đăng nhập, email hoặc mật khẩu",
+    "server.currentPasswordWrong": "Mật khẩu hiện tại không đúng",
+    "server.usernameTaken": "Tên đăng nhập đã được dùng",
+    "server.emailTaken": "Email đã được dùng",
     "server.tooManyAttempts": "Quá nhiều lần thử. Vui lòng thử lại sau.",
 
     "index.docTitle": "Tổng quan · Chia Hoá Đơn",
@@ -503,10 +575,14 @@ const I18n = (() => {
   const serverMessages = {
     "Authentication required": "server.authRequired",
     "Incorrect username, email or password": "server.invalidCredentials",
+    "Current password is incorrect": "server.currentPasswordWrong",
+    "Username is already taken": "server.usernameTaken",
+    "Email is already in use": "server.emailTaken",
     "Too many attempts. Try again later.": "server.tooManyAttempts",
   };
 
   let lang = DEFAULT_LANG;
+  let profileLang = null;
   const listeners = new Set();
 
   function normalize(code) {
@@ -526,6 +602,9 @@ const I18n = (() => {
 
     const fromQuery = normalize(new URLSearchParams(window.location.search).get("lang"));
     if (fromQuery) return fromQuery;
+
+    const fromProfile = normalize(profileLang);
+    if (fromProfile) return fromProfile;
 
     for (const candidate of navigator.languages || [navigator.language || ""]) {
       const match = normalize(candidate);
@@ -615,6 +694,11 @@ const I18n = (() => {
     });
   }
 
+  function useDefault(code) {
+    const next = normalize(code);
+    if (next) profileLang = next;
+  }
+
   function init() {
     lang = detect();
     apply();
@@ -626,6 +710,7 @@ const I18n = (() => {
     t,
     apply,
     setLang,
+    useDefault,
     onChange,
     translateServer,
     lang: () => lang,

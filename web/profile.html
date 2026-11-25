@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title data-i18n="profile.docTitle">Profile · Bill Sharing</title>
+    <link rel="stylesheet" href="/css/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="shell topbar-inner">
+        <a class="brand" href="/dashboard.html" data-i18n="app.name">Bill Sharing</a>
+        <nav class="nav" data-i18n-aria-label="nav.primary" aria-label="Primary">
+          <a href="/dashboard.html" data-nav data-i18n="nav.bills">Bills</a>
+          <a href="/create-bill.html" data-nav data-i18n="nav.newBill">New bill</a>
+          <a href="/admin" data-nav data-i18n="nav.admin">Members &amp; groups</a>
+          <a href="/profile.html" data-nav data-i18n="nav.profile">Profile</a>
+        </nav>
+        <div class="topbar-actions">
+          <div data-lang-switcher></div>
+          <button class="btn btn-quiet" type="button" data-logout data-i18n="nav.signOut">Sign out</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="shell main">
+      <div class="page-head">
+        <div>
+          <div class="eyebrow" data-i18n="app.eyebrow.account">Account</div>
+          <h1 data-i18n="profile.heading">Your profile</h1>
+          <p class="sub" data-i18n="profile.sub">Update the name others see, how you sign in, and your password.</p>
+        </div>
+      </div>
+
+      <div class="grid grid-2">
+        <section class="card" aria-labelledby="details-title">
+          <div class="card-head">
+            <div>
+              <h2 id="details-title" data-i18n="profile.details">Profile details</h2>
+              <div class="muted" data-i18n="profile.detailsHint">Your display name, sign-in username and email.</div>
+            </div>
+          </div>
+          <form class="form" id="profile-form" novalidate>
+            <div class="field">
+              <label for="p-display-name" data-i18n="profile.displayName">Display name</label>
+              <input id="p-display-name" name="display_name" type="text" maxlength="120" required autocomplete="name" />
+              <div class="hint" data-i18n="profile.displayNameHint">Shown on bills, balances and the members list.</div>
+            </div>
+            <div class="field">
+              <label for="p-username" data-i18n="profile.username">Username</label>
+              <input id="p-username" name="username" type="text" maxlength="60" required autocomplete="username" />
+              <div class="hint" data-i18n="profile.usernameHint">You can sign in with this or your email.</div>
+            </div>
+            <div class="field">
+              <label for="p-email" data-i18n="profile.email">Email</label>
+              <input id="p-email" name="email" type="email" maxlength="254" required autocomplete="email" />
+            </div>
+            <div class="field">
+              <label for="p-language" data-i18n="profile.language">Default language</label>
+              <select id="p-language" name="language">
+                <option value="en" data-i18n="profile.langEn">English</option>
+                <option value="vi" data-i18n="profile.langVi">Tiếng Việt</option>
+              </select>
+              <div class="hint" data-i18n="profile.languageHint">
+                Used when you open the app on a device that has no language picked yet.
+              </div>
+            </div>
+            <div class="notice error hidden" id="profile-error" role="alert"></div>
+            <button class="btn" type="submit" id="profile-submit" data-i18n="profile.save">Save changes</button>
+          </form>
+        </section>
+
+        <section class="card" aria-labelledby="password-title">
+          <div class="card-head">
+            <div>
+              <h2 id="password-title" data-i18n="profile.passwordTitle">Change password</h2>
+              <div class="muted" data-i18n="profile.passwordHint">Use at least 8 characters.</div>
+            </div>
+          </div>
+          <form class="form" id="password-form" novalidate>
+            <div class="field">
+              <label for="p-current" data-i18n="profile.currentPassword">Current password</label>
+              <input id="p-current" name="current_password" type="password" required autocomplete="current-password" />
+            </div>
+            <div class="field">
+              <label for="p-new" data-i18n="profile.newPassword">New password</label>
+              <input id="p-new" name="new_password" type="password" required autocomplete="new-password" />
+            </div>
+            <div class="field">
+              <label for="p-confirm" data-i18n="profile.confirmPassword">Confirm new password</label>
+              <input id="p-confirm" name="confirm_password" type="password" required autocomplete="new-password" />
+            </div>
+            <div class="notice error hidden" id="password-error" role="alert"></div>
+            <div class="notice hidden" id="password-unavailable" data-i18n="profile.passwordUnavailable">
+              This account has no password yet, so it cannot change one.
+            </div>
+            <button class="btn" type="submit" id="password-submit" data-i18n="profile.changePassword">Change password</button>
+          </form>
+        </section>
+      </div>
+    </main>
+
+    <script src="/js/i18n.js"></script>
+    <script src="/js/api.js"></script>
+    <script src="/js/common.js"></script>
+    <script src="/js/profile.js"></script>
+  </body>
+</html>

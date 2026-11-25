@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-//go:embed schema.sql
+//go:embed schema.sql merge_members.sql
 var schemaFS embed.FS
 
 func Connect(ctx context.Context, databaseURL string, logger *slog.Logger) (*pgxpool.Pool, error) {
@@ -55,6 +55,13 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	}
 	if _, err := pool.Exec(ctx, string(schema)); err != nil {
 		return fmt.Errorf("apply schema: %w", err)
+	}
+	merge, err := schemaFS.ReadFile("merge_members.sql")
+	if err != nil {
+		return fmt.Errorf("read merge_members.sql: %w", err)
+	}
+	if _, err := pool.Exec(ctx, string(merge)); err != nil {
+		return fmt.Errorf("merge members into users: %w", err)
 	}
 	return nil
 }

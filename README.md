@@ -7,7 +7,7 @@ Self-hosted web app for splitting shared expenses between individuals and compos
 - **Backend:** Go 1.23, standard library `net/http` routing, PostgreSQL via `pgx`
 - **Frontend:** Vanilla HTML/CSS/ES2020, zero build step, served by the Go binary
 - **Auth:** Email/password accounts (bcrypt), signing in with username **or** email; HMAC-signed session cookie (HttpOnly, SameSite=Lax). Reading bills is public; writing requires a session.
-- **Languages:** English and Vietnamese with a UI switcher
+- **Languages:** English and Vietnamese with a UI switcher; each account stores a default language (English if unset)
 
 ## Running
 
@@ -41,8 +41,15 @@ The app is published on `APP_HOST_PORT` (default `8080`). Uploaded receipts use 
 | `COOKIE_SECURE` | no | `true` | Set `false` for plain HTTP only |
 | `MAX_UPLOAD_BYTES` | no | `26214400` | Per-bill upload limit (25 MB) |
 | `CURRENCY` | no | `$` | Symbol shown in the UI |
+| `SMTP_HOST` | no | `smtp.gmail.com` | SMTP server (Gmail) |
+| `SMTP_PORT` | no | `587` | SMTP port (STARTTLS) |
+| `SMTP_USER` | no | – | Gmail address; with `SMTP_PASSWORD`, enables member welcome email |
+| `SMTP_PASSWORD` | no | – | Gmail [app password](https://support.google.com/accounts/answer/185833) |
+| `SMTP_FROM` | no | `SMTP_USER` | From header |
 
 `docker-compose.yml` requires `DATABASE_URL` plus the seed and session variables above.
+
+People live in a single `users` table: login rows have a `password_hash`; bill-only people are created with a null password and a `display_name` for splitting. The `/api/members` routes still use that same table (column names in JSON stay `name`, `member_id`, etc.). Each row also stores a `language` (`en`/`vi`, default `en`) used as the interface language on devices that have not picked one; `/api/session` returns it to the client.
 
 ## Development
 
@@ -97,6 +104,8 @@ Authenticated:
 | --- | --- |
 | `POST` | `/api/logout` |
 | `GET` | `/api/session` |
+| `GET`/`PUT` | `/api/profile` |
+| `PUT` | `/api/profile/password` |
 | `GET`/`POST` | `/api/members` |
 | `GET`/`PUT` | `/api/members/{id}` |
 | `GET`/`POST` | `/api/groups` |
@@ -108,4 +117,4 @@ Authenticated:
 
 `POST /api/bills` accepts `multipart/form-data` with a `payload` JSON field and up to 10 `files` (JPEG, PNG, WebP, PDF; MIME sniffed server-side, stored under random names).
 
-The public home page is `/` and lists every bill with its status and shared members; `/bill-detail.html?id=N` and its receipt evidence are also public. Adding bills and managing members, groups and statuses requires signing in at `/login.html`; those pages redirect there when signed out.
+The public home page is `/` and lists every bill with its status and shared members; `/bill-detail.html?id=N` and its receipt evidence are also public. Adding bills and managing members, groups and statuses requires signing in at `/login.html`; those pages redirect there when signed out. Signed-in users edit their display name, username, email, default language and password at `/profile.html`.

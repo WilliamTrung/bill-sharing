@@ -40,11 +40,16 @@ const Chrome = (() => {
     } catch (err) {
       if (err.status === 401) return;
     }
-    markActiveNav();
-    wireLogout();
     if (window.I18n) {
+      const session = await API.currentSession();
+      if (session && session.language) {
+        I18n.useDefault(session.language);
+        I18n.apply();
+      }
       I18n.onChange(() => rerender());
     }
+    markActiveNav();
+    wireLogout();
     if (opts.onReady) {
       try {
         await opts.onReady();

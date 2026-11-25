@@ -175,7 +175,7 @@ func (s *Server) buildBillPlan(ctx context.Context, payload billPayload) (*billP
 	}
 
 	var payerActive bool
-	err = s.db.QueryRow(ctx, `SELECT is_active FROM members WHERE id = $1`, payload.PaidByMemberID).Scan(&payerActive)
+	err = s.db.QueryRow(ctx, `SELECT is_active FROM users WHERE id = $1`, payload.PaidByMemberID).Scan(&payerActive)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, badRequestf("Payer does not exist")
 	}
@@ -328,7 +328,7 @@ func (s *Server) loadMemberRefs(ctx context.Context, ids []int64) (map[int64]mod
 	if len(ids) == 0 {
 		return result, nil
 	}
-	rows, err := s.db.Query(ctx, `SELECT id, name, is_active FROM members WHERE id = ANY($1)`, ids)
+	rows, err := s.db.Query(ctx, `SELECT id, `+userLabelSQL+` AS name, is_active FROM users WHERE id = ANY($1)`, ids)
 	if err != nil {
 		return nil, fmt.Errorf("load members: %w", err)
 	}
@@ -391,11 +391,11 @@ func (s *Server) loadResolvedGroups(ctx context.Context, ids []int64) (map[int64
 	}
 
 	memberRows, err := s.db.Query(ctx, `
-		SELECT gm.group_id, gm.member_id, m.name, gm.internal_ratio, m.is_active
+		SELECT gm.group_id, gm.member_id, `+userLabelSQLM+`, gm.internal_ratio, m.is_active
 		FROM group_members gm
-		JOIN members m ON m.id = gm.member_id
+		JOIN users m ON m.id = gm.member_id
 		WHERE gm.group_id = ANY($1)
-		ORDER BY m.name ASC`, ids)
+		ORDER BY `+userLabelSQLM+` ASC`, ids)
 	if err != nil {
 		return nil, fmt.Errorf("load group members: %w", err)
 	}
@@ -583,12 +583,12 @@ func randomFilename() string {
 
 func (s *Server) handleListBills(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.db.Query(r.Context(), `
-		SELECT b.id, b.title, b.description, b.total_amount_cents, b.paid_by_member_id, m.name,
+		SELECT b.id, b.title, b.description, b.total_amount_cents, b.paid_by_member_id, `+userLabelSQLM+`,
 		       b.split_mode, b.status, b.bill_date, b.created_at,
 		       (SELECT COUNT(*) FROM bill_attachments a WHERE a.bill_id = b.id),
 		       (SELECT COUNT(*) FROM bill_participants p WHERE p.bill_id = b.id)
 		FROM bills b
-		JOIN members m ON m.id = b.paid_by_member_id
+		JOIN users m ON m.id = b.paid_by_member_id
 		ORDER BY b.bill_date DESC, b.id DESC`)
 	if err != nil {
 		s.logger.Error("list bills", "error", err)
@@ -621,12 +621,12 @@ func (s *Server) handleListBills(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handlePublicListBills(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	rows, err := s.db.Query(ctx, `
-		SELECT b.id, b.title, b.description, b.total_amount_cents, m.name,
+		SELECT b.id, b.title, b.description, b.total_amount_cents, `+userLabelSQLM+`,
 		       b.split_mode, b.status, b.bill_date,
 		       (SELECT COUNT(*) FROM bill_attachments a WHERE a.bill_id = b.id),
 		       (SELECT COUNT(*) FROM bill_participants p WHERE p.bill_id = b.id)
 		FROM bills b
-		JOIN members m ON m.id = b.paid_by_member_id
+		JOIN users m ON m.id = b.paid_by_member_id
 		ORDER BY b.bill_date DESC, b.id DESC`)
 	if err != nil {
 		s.logger.Error("list public bills", "error", err)
@@ -661,11 +661,11 @@ func (s *Server) handlePublicListBills(w http.ResponseWriter, r *http.Request) {
 	}
 
 	memberRows, err := s.db.Query(ctx, `
-		SELECT s.bill_id, m.name
+		SELECT s.bill_id, `+userLabelSQLM+`
 		FROM bill_member_shares s
-		JOIN members m ON m.id = s.member_id
+		JOIN users m ON m.id = s.member_id
 		WHERE s.bill_id = ANY($1)
-		ORDER BY m.name ASC`, ids)
+		ORDER BY `+userLabelSQLM+` ASC`, ids)
 	if err != nil {
 		s.logger.Error("list public bill members", "error", err)
 		writeError(w, http.StatusInternalServerError, "Could not load bills")
@@ -767,12 +767,12 @@ func (s *Server) loadBill(ctx context.Context, id int64) (models.Bill, error) {
 	var bill models.Bill
 	var billDate time.Time
 	err := s.db.QueryRow(ctx, `
-		SELECT b.id, b.title, b.description, b.total_amount_cents, b.paid_by_member_id, m.name,
+		SELECT b.id, b.title, b.description, b.total_amount_cents, b.paid_by_member_id, `+userLabelSQLM+`,
 		       b.split_mode, b.status, b.bill_date, b.created_at,
 		       (SELECT COUNT(*) FROM bill_attachments a WHERE a.bill_id = b.id),
 		       (SELECT COUNT(*) FROM bill_participants p WHERE p.bill_id = b.id)
 		FROM bills b
-		JOIN members m ON m.id = b.paid_by_member_id
+		JOIN users m ON m.id = b.paid_by_member_id
 		WHERE b.id = $1`, id,
 	).Scan(&bill.ID, &bill.Title, &bill.Description, &bill.TotalAmountCents,
 		&bill.PaidByMemberID, &bill.PaidByName, &bill.SplitMode, &bill.Status, &billDate, &bill.CreatedAt,
@@ -787,9 +787,9 @@ func (s *Server) loadBill(ctx context.Context, id int64) (models.Bill, error) {
 
 	participantRows, err := s.db.Query(ctx, `
 		SELECT p.id, p.participant_type, p.member_id, p.group_id,
-		       COALESCE(m.name, g.name, ''), p.ratio_weight, p.allocated_amount_cents
+		       COALESCE(`+userLabelSQLM+`, g.name, ''), p.ratio_weight, p.allocated_amount_cents
 		FROM bill_participants p
-		LEFT JOIN members m ON m.id = p.member_id
+		LEFT JOIN users m ON m.id = p.member_id
 		LEFT JOIN member_groups g ON g.id = p.group_id
 		WHERE p.bill_id = $1
 		ORDER BY p.id`, id)
@@ -814,9 +814,9 @@ func (s *Server) loadBill(ctx context.Context, id int64) (models.Bill, error) {
 	}
 
 	shareRows, err := s.db.Query(ctx, `
-		SELECT s.id, s.member_id, m.name, s.source_group_id, s.owed_amount_cents
+		SELECT s.id, s.member_id, `+userLabelSQLM+`, s.source_group_id, s.owed_amount_cents
 		FROM bill_member_shares s
-		JOIN members m ON m.id = s.member_id
+		JOIN users m ON m.id = s.member_id
 		WHERE s.bill_id = $1
 		ORDER BY s.id`, id)
 	if err != nil {
@@ -890,11 +890,11 @@ func (s *Server) handleDeleteBill(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleBalances(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.db.Query(r.Context(), `
-		SELECT m.id, m.name, m.is_active,
+		SELECT m.id, `+userLabelSQLM+`, m.is_active,
 		       COALESCE(p.total, 0)::bigint,
 		       COALESCE(s.total, 0)::bigint,
 		       (COALESCE(p.total, 0) - COALESCE(s.total, 0))::bigint
-		FROM members m
+		FROM users m
 		LEFT JOIN (
 			SELECT paid_by_member_id AS member_id, SUM(total_amount_cents) AS total
 			FROM bills GROUP BY paid_by_member_id
@@ -903,7 +903,7 @@ func (s *Server) handleBalances(w http.ResponseWriter, r *http.Request) {
 			SELECT member_id, SUM(owed_amount_cents) AS total
 			FROM bill_member_shares GROUP BY member_id
 		) s ON s.member_id = m.id
-		ORDER BY m.name ASC`)
+		ORDER BY `+userLabelSQLM+` ASC`)
 	if err != nil {
 		s.logger.Error("load balances", "error", err)
 		writeError(w, http.StatusInternalServerError, "Could not load balances")

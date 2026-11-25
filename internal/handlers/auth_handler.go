@@ -150,7 +150,18 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]bool{"authenticated": true})
+	userID, ok := s.auth.RequestUser(r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "Authentication required")
+		return
+	}
+	language, err := accounts.SessionLanguage(r.Context(), s.db, userID)
+	if err != nil {
+		s.logger.Error("load session language", "error", err)
+		writeError(w, http.StatusInternalServerError, "Could not load session")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"authenticated": true, "language": language})
 }
 
 func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {

@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
+	"github.com/WilliamTrung/bill-sharing/internal/accounts"
 	"github.com/WilliamTrung/bill-sharing/internal/models"
 	"github.com/jackc/pgx/v5"
 )
@@ -37,9 +39,9 @@ type memberUpdateInput struct {
 func (s *Server) handleListMembers(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	rows, err := s.db.Query(ctx, `
-		SELECT id, name, phone, email, notes, avatar_color, is_active, created_at, updated_at
-		FROM members
-		ORDER BY is_active DESC, name ASC`)
+		SELECT id, `+userLabelSQL+`, phone, email, notes, avatar_color, is_active, created_at, updated_at
+		FROM users
+		ORDER BY is_active DESC, `+userLabelSQL+` ASC`)
 	if err != nil {
 		s.logger.Error("list members", "error", err)
 		writeError(w, http.StatusInternalServerError, "Could not load members")
@@ -117,12 +119,38 @@ func (s *Server) handleCreateMember(w http.ResponseWriter, r *http.Request) {
 		color = avatarColor(name)
 	}
 
+	email := strings.TrimSpace(in.Email)
+	if email != "" {
+		var taken bool
+		if err := s.db.QueryRow(r.Context(), `
+			SELECT EXISTS(SELECT 1 FROM users WHERE lower(email) = lower($1))`, email,
+		).Scan(&taken); err != nil {
+			s.logger.Error("check member email", "error", err)
+			writeError(w, http.StatusInternalServerError, "Could not create member")
+			return
+		}
+		if taken {
+			writeError(w, http.StatusBadRequest, "Email is already in use")
+			return
+		}
+	}
+
+	username, err := accounts.AllocUsername(r.Context(), s.db, accounts.UsernameBase(name, email))
+	if err != nil {
+		s.logger.Error("alloc member username", "error", err)
+		writeError(w, http.StatusInternalServerError, "Could not create member")
+		return
+	}
+	if email == "" {
+		email = username + "@users.invalid"
+	}
+
 	var m models.Member
 	err = s.db.QueryRow(r.Context(), `
-		INSERT INTO members (name, phone, email, notes, avatar_color, is_active)
-		VALUES ($1, $2, $3, $4, $5, $6)
-		RETURNING id, name, phone, email, notes, avatar_color, is_active, created_at, updated_at`,
-		name, strings.TrimSpace(in.Phone), strings.TrimSpace(in.Email),
+		INSERT INTO users (username, email, password_hash, display_name, phone, notes, avatar_color, is_active)
+		VALUES ($1, $2, NULL, $3, $4, $5, $6, $7)
+		RETURNING id, `+userLabelSQL+`, phone, email, notes, avatar_color, is_active, created_at, updated_at`,
+		username, email, name, strings.TrimSpace(in.Phone),
 		strings.TrimSpace(in.Notes), color, active,
 	).Scan(&m.ID, &m.Name, &m.Phone, &m.Email, &m.Notes, &m.AvatarColor,
 		&m.IsActive, &m.CreatedAt, &m.UpdatedAt)
@@ -132,6 +160,26 @@ func (s *Server) handleCreateMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	m.Groups = []models.MemberGroupRef{}
+
+	if s.mailer.Enabled() && m.Email != "" {
+		to, subject, body := m.Email,
+			"You were added to Bill Sharing",
+			fmt.Sprintf("Hi %s,\n\nYou have been added as a member on Bill Sharing.\n", m.Name)
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			done := make(chan error, 1)
+			go func() { done <- s.mailer.Send(to, subject, body) }()
+			select {
+			case err := <-done:
+				if err != nil {
+					s.logger.Warn("member welcome email failed", "to", to, "error", err)
+				}
+			case <-ctx.Done():
+				s.logger.Warn("member welcome email timed out", "to", to)
+			}
+		}()
+	}
 
 	writeJSON(w, http.StatusCreated, m)
 }
@@ -219,7 +267,7 @@ func (s *Server) handleUpdateMember(w http.ResponseWriter, r *http.Request) {
 		sets = append(sets, fmt.Sprintf("%s = $%d", column, len(args)))
 	}
 	if in.Name != nil {
-		add("name", name)
+		add("display_name", name)
 	}
 	if in.Phone != nil {
 		add("phone", phone)
@@ -240,7 +288,7 @@ func (s *Server) handleUpdateMember(w http.ResponseWriter, r *http.Request) {
 	if len(sets) > 0 {
 		sets = append(sets, "updated_at = now()")
 		args = append(args, id)
-		query := fmt.Sprintf("UPDATE members SET %s WHERE id = $%d", strings.Join(sets, ", "), len(args))
+		query := fmt.Sprintf("UPDATE users SET %s WHERE id = $%d", strings.Join(sets, ", "), len(args))
 		if _, err := s.db.Exec(ctx, query, args...); err != nil {
 			s.logger.Error("update member", "error", err)
 			writeError(w, http.StatusInternalServerError, "Could not update member")
@@ -260,8 +308,8 @@ func (s *Server) handleUpdateMember(w http.ResponseWriter, r *http.Request) {
 func (s *Server) loadMember(ctx context.Context, id int64) (models.Member, error) {
 	var m models.Member
 	err := s.db.QueryRow(ctx, `
-		SELECT id, name, phone, email, notes, avatar_color, is_active, created_at, updated_at
-		FROM members WHERE id = $1`, id,
+		SELECT id, `+userLabelSQL+`, phone, email, notes, avatar_color, is_active, created_at, updated_at
+		FROM users WHERE id = $1`, id,
 	).Scan(&m.ID, &m.Name, &m.Phone, &m.Email, &m.Notes, &m.AvatarColor,
 		&m.IsActive, &m.CreatedAt, &m.UpdatedAt)
 	if err != nil {

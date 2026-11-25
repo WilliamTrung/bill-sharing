@@ -3,12 +3,18 @@ package models
 import "time"
 
 type User struct {
-	ID        int64     `json:"id"`
-	Username  string    `json:"username"`
-	Email     string    `json:"email"`
-	IsActive  bool      `json:"is_active"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID          int64     `json:"id"`
+	Username    string    `json:"username"`
+	Email       string    `json:"email"`
+	DisplayName string    `json:"display_name"`
+	Phone       string    `json:"phone"`
+	Notes       string    `json:"notes"`
+	AvatarColor string    `json:"avatar_color"`
+	IsActive    bool      `json:"is_active"`
+	HasPassword bool      `json:"has_password"`
+	Language    string    `json:"language"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 type MemberGroupRef struct {

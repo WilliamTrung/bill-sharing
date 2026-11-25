@@ -53,10 +53,10 @@ func (s *Server) handleListGroups(w http.ResponseWriter, r *http.Request) {
 	}
 
 	memberRows, err := s.db.Query(ctx, `
-		SELECT gm.group_id, gm.member_id, m.name, gm.internal_ratio
+		SELECT gm.group_id, gm.member_id, `+userLabelSQLM+`, gm.internal_ratio
 		FROM group_members gm
-		JOIN members m ON m.id = gm.member_id
-		ORDER BY m.name ASC`)
+		JOIN users m ON m.id = gm.member_id
+		ORDER BY `+userLabelSQLM+` ASC`)
 	if err != nil {
 		s.logger.Error("list group members", "error", err)
 		writeError(w, http.StatusInternalServerError, "Could not load groups")
@@ -269,11 +269,11 @@ func (s *Server) loadGroup(ctx context.Context, id int64) (models.Group, error) 
 	}
 
 	rows, err := s.db.Query(ctx, `
-		SELECT gm.member_id, m.name, gm.internal_ratio
+		SELECT gm.member_id, `+userLabelSQLM+`, gm.internal_ratio
 		FROM group_members gm
-		JOIN members m ON m.id = gm.member_id
+		JOIN users m ON m.id = gm.member_id
 		WHERE gm.group_id = $1
-		ORDER BY m.name ASC`, id)
+		ORDER BY `+userLabelSQLM+` ASC`, id)
 	if err != nil {
 		return models.Group{}, err
 	}
@@ -325,7 +325,7 @@ func (s *Server) validateGroupMembers(ctx context.Context, inputs []groupMemberI
 		ids = append(ids, member.MemberID)
 	}
 
-	rows, err := s.db.Query(ctx, `SELECT id, name, is_active FROM members WHERE id = ANY($1)`, ids)
+	rows, err := s.db.Query(ctx, `SELECT id, `+userLabelSQL+` AS name, is_active FROM users WHERE id = ANY($1)`, ids)
 	if err != nil {
 		return nil, err
 	}

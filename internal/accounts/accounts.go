@@ -12,7 +12,11 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-var ErrInvalidCredentials = errors.New("invalid credentials")
+var (
+	ErrInvalidCredentials = errors.New("invalid credentials")
+	ErrUsernameTaken      = errors.New("username is already taken")
+	ErrEmailTaken         = errors.New("email is already in use")
+)
 
 func HashPassword(password string) (string, error) {
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
@@ -26,35 +30,24 @@ func verifyPassword(hash, password string) bool {
 	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
 }
 
+// EnsureSeed creates the seed account once. If a row with the seed username or
+// email already exists it is left untouched, so a password changed in the UI is
+// never reverted on the next startup.
 func EnsureSeed(ctx context.Context, pool *pgxpool.Pool, username, email, password string) (string, error) {
 	username = strings.TrimSpace(username)
 	email = strings.TrimSpace(email)
 
-	var existingID int64
-	var existingHash string
+	var exists bool
 	err := pool.QueryRow(ctx, `
-		SELECT id, password_hash FROM users
-		WHERE lower(username) = lower($1) OR lower(email) = lower($2)
-		LIMIT 1`, username, email).Scan(&existingID, &existingHash)
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		SELECT EXISTS (
+			SELECT 1 FROM users
+			WHERE lower(username) = lower($1) OR lower(email) = lower($2)
+		)`, username, email).Scan(&exists)
+	if err != nil {
 		return "", fmt.Errorf("look up seed user: %w", err)
 	}
-
-	if errors.Is(err, pgx.ErrNoRows) {
-		hash, err := HashPassword(password)
-		if err != nil {
-			return "", fmt.Errorf("hash seed password: %w", err)
-		}
-		if _, err := pool.Exec(ctx, `
-			INSERT INTO users (username, email, password_hash) VALUES ($1, $2, $3)`,
-			username, email, hash); err != nil {
-			return "", fmt.Errorf("create seed user: %w", err)
-		}
-		return "created", nil
-	}
-
-	if verifyPassword(existingHash, password) {
-		return "unchanged", nil
+	if exists {
+		return "exists", nil
 	}
 
 	hash, err := HashPassword(password)
@@ -62,10 +55,107 @@ func EnsureSeed(ctx context.Context, pool *pgxpool.Pool, username, email, passwo
 		return "", fmt.Errorf("hash seed password: %w", err)
 	}
 	if _, err := pool.Exec(ctx, `
-		UPDATE users SET password_hash = $1, updated_at = now() WHERE id = $2`, hash, existingID); err != nil {
-		return "", fmt.Errorf("update seed password: %w", err)
+		INSERT INTO users (username, email, password_hash, display_name) VALUES ($1, $2, $3, $1)`,
+		username, email, hash); err != nil {
+		return "", fmt.Errorf("create seed user: %w", err)
 	}
-	return "updated", nil
+	return "created", nil
+}
+
+const userColumns = `id, username, email, display_name, phone, notes, avatar_color, is_active,
+	(password_hash IS NOT NULL) AS has_password, language, created_at, updated_at`
+
+func scanUser(row pgx.Row) (models.User, error) {
+	var user models.User
+	err := row.Scan(&user.ID, &user.Username, &user.Email, &user.DisplayName, &user.Phone,
+		&user.Notes, &user.AvatarColor, &user.IsActive, &user.HasPassword, &user.Language,
+		&user.CreatedAt, &user.UpdatedAt)
+	return user, err
+}
+
+func GetUser(ctx context.Context, pool *pgxpool.Pool, userID int64) (models.User, error) {
+	return scanUser(pool.QueryRow(ctx, `
+		SELECT `+userColumns+` FROM users WHERE id = $1`, userID))
+}
+
+func UpdateProfile(ctx context.Context, pool *pgxpool.Pool, userID int64, displayName, username, email, language string) (models.User, error) {
+	displayName = strings.TrimSpace(displayName)
+	username = strings.TrimSpace(username)
+	email = strings.TrimSpace(email)
+
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return models.User{}, err
+	}
+	defer tx.Rollback(ctx)
+
+	var conflictUsername, conflictEmail bool
+	err = tx.QueryRow(ctx, `
+		SELECT
+			EXISTS (SELECT 1 FROM users WHERE lower(username) = lower($1) AND id <> $3),
+			EXISTS (SELECT 1 FROM users WHERE lower(email) = lower($2) AND id <> $3)`,
+		username, email, userID,
+	).Scan(&conflictUsername, &conflictEmail)
+	if err != nil {
+		return models.User{}, fmt.Errorf("check profile conflicts: %w", err)
+	}
+	if conflictUsername {
+		return models.User{}, ErrUsernameTaken
+	}
+	if conflictEmail {
+		return models.User{}, ErrEmailTaken
+	}
+
+	user, err := scanUser(tx.QueryRow(ctx, `
+		UPDATE users SET display_name = $1, username = $2, email = $3, language = $4, updated_at = now()
+		WHERE id = $5
+		RETURNING `+userColumns,
+		displayName, username, email, language, userID,
+	))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return models.User{}, err
+	}
+	if err != nil {
+		return models.User{}, fmt.Errorf("update profile: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return models.User{}, err
+	}
+	return user, nil
+}
+
+func SessionLanguage(ctx context.Context, pool *pgxpool.Pool, userID int64) (string, error) {
+	var language string
+	err := pool.QueryRow(ctx, `SELECT language FROM users WHERE id = $1`, userID).Scan(&language)
+	if err != nil {
+		return "", err
+	}
+	return language, nil
+}
+
+func ChangePassword(ctx context.Context, pool *pgxpool.Pool, userID int64, current, next string) error {
+	var hash string
+	err := pool.QueryRow(ctx, `SELECT password_hash FROM users WHERE id = $1`, userID).Scan(&hash)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrInvalidCredentials
+	}
+	if err != nil {
+		return fmt.Errorf("load password hash: %w", err)
+	}
+	if hash == "" || !verifyPassword(hash, current) {
+		return ErrInvalidCredentials
+	}
+
+	newHash, err := HashPassword(next)
+	if err != nil {
+		return fmt.Errorf("hash new password: %w", err)
+	}
+	if _, err := pool.Exec(ctx, `
+		UPDATE users SET password_hash = $1, updated_at = now() WHERE id = $2`, newHash, userID); err != nil {
+		return fmt.Errorf("update password: %w", err)
+	}
+	return nil
 }
 
 func Authenticate(ctx context.Context, pool *pgxpool.Pool, identifier, password string) (models.User, error) {
@@ -89,7 +179,7 @@ func Authenticate(ctx context.Context, pool *pgxpool.Pool, identifier, password 
 	if err != nil {
 		return models.User{}, fmt.Errorf("load user: %w", err)
 	}
-	if !verifyPassword(hash, password) || !user.IsActive {
+	if hash == "" || !verifyPassword(hash, password) || !user.IsActive {
 		return models.User{}, ErrInvalidCredentials
 	}
 	return user, nil

@@ -116,6 +116,26 @@ const API = (() => {
       }
     },
 
+    profile() {
+      return request("GET", "/api/profile");
+    },
+
+    updateProfile(displayName, username, email, language) {
+      return request("PUT", "/api/profile", {
+        display_name: displayName,
+        username,
+        email,
+        language,
+      });
+    },
+
+    changePassword(currentPassword, newPassword) {
+      return request("PUT", "/api/profile/password", {
+        current_password: currentPassword,
+        new_password: newPassword,
+      });
+    },
+
     publicBills() {
       return request("GET", "/api/public/bills", undefined, { redirectOn401: false });
     },

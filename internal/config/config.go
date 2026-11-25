@@ -22,6 +22,11 @@ type Config struct {
 	MaxUploadBytes int64
 	SessionTTL     time.Duration
 	Currency       string
+	SMTPHost       string
+	SMTPPort       int
+	SMTPUser       string
+	SMTPPassword   string
+	SMTPFrom       string
 }
 
 func Load() (Config, error) {
@@ -38,6 +43,11 @@ func Load() (Config, error) {
 		MaxUploadBytes: getInt64("MAX_UPLOAD_BYTES", 25<<20),
 		SessionTTL:     30 * 24 * time.Hour,
 		Currency:       getenv("CURRENCY", "$"),
+		SMTPHost:       getenv("SMTP_HOST", "smtp.gmail.com"),
+		SMTPPort:       int(getInt64("SMTP_PORT", 587)),
+		SMTPUser:       strings.TrimSpace(os.Getenv("SMTP_USER")),
+		SMTPPassword:   os.Getenv("SMTP_PASSWORD"),
+		SMTPFrom:       strings.TrimSpace(os.Getenv("SMTP_FROM")),
 	}
 
 	if cfg.DatabaseURL == "" {

@@ -12,6 +12,7 @@ import (
 
 	"github.com/WilliamTrung/bill-sharing/internal/auth"
 	"github.com/WilliamTrung/bill-sharing/internal/config"
+	"github.com/WilliamTrung/bill-sharing/internal/mail"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -19,6 +20,7 @@ type Server struct {
 	cfg     config.Config
 	db      *pgxpool.Pool
 	auth    *auth.Manager
+	mailer  mail.Gmail
 	logger  *slog.Logger
 	webFS   fs.FS
 	mux     *http.ServeMux
@@ -30,6 +32,13 @@ func New(cfg config.Config, db *pgxpool.Pool, logger *slog.Logger, webFS fs.FS) 
 		cfg:     cfg,
 		db:      db,
 		auth:    auth.New(cfg.SessionSecret, cfg.SessionTTL),
+		mailer: mail.Gmail{
+			Host: cfg.SMTPHost,
+			Port: cfg.SMTPPort,
+			User: cfg.SMTPUser,
+			Pass: cfg.SMTPPassword,
+			From: cfg.SMTPFrom,
+		},
 		logger:  logger,
 		webFS:   webFS,
 		mux:     http.NewServeMux(),
@@ -56,6 +65,10 @@ func (s *Server) routes() {
 	// Authenticated: everything that mutates data or exposes member contact info.
 	s.mux.Handle("POST /api/logout", s.requireAuth(http.HandlerFunc(s.handleLogout)))
 	s.mux.Handle("GET /api/session", s.requireAuth(http.HandlerFunc(s.handleSession)))
+
+	s.mux.Handle("GET /api/profile", s.requireAuth(http.HandlerFunc(s.handleProfile)))
+	s.mux.Handle("PUT /api/profile", s.requireAuth(http.HandlerFunc(s.handleUpdateProfile)))
+	s.mux.Handle("PUT /api/profile/password", s.requireAuth(http.HandlerFunc(s.handleChangePassword)))
 
 	s.mux.Handle("GET /api/members", s.requireAuth(http.HandlerFunc(s.handleListMembers)))
 	s.mux.Handle("POST /api/members", s.requireAuth(http.HandlerFunc(s.handleCreateMember)))
