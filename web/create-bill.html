@@ -108,11 +108,22 @@
               <div class="muted" data-i18n="bill.participantsHint">Select people and/or groups. Overlapping selections are disabled.</div>
             </div>
           </div>
+          <div class="field">
+            <label for="participant-search" class="sr-only" data-i18n="bill.searchParticipants">Search participants</label>
+            <input
+              id="participant-search"
+              type="search"
+              autocomplete="off"
+              data-i18n-placeholder="bill.searchPlaceholder"
+              placeholder="Search by name"
+            />
+          </div>
           <div class="checkbox-list" id="participants"></div>
           <div class="empty hidden" id="participants-empty">
             <span data-i18n="bill.noActiveMembers">No active members yet.</span>
             <a href="/admin" data-i18n="bill.addMembersFirst">Add members first</a>.
           </div>
+          <div class="empty hidden" id="participants-no-match" data-i18n="bill.noMatches">No matching participants.</div>
         </section>
 
         <section class="card" aria-labelledby="evidence-title">

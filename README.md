@@ -48,8 +48,11 @@ The app is published on `APP_HOST_PORT` (default `8080`). Uploaded receipts use 
 | `SMTP_FROM` | no | `SMTP_USER` | From header |
 | `SMTP_FROM_NAME` | no | `Share da Bill` | Display name recipients see instead of the address |
 | `PUBLIC_BASE_URL` | no | `http://bill-sharing.williamthanhtrung.id.vn` | Public origin used to build invitation links |
+| `ADMIN_EMAILS` | no | seed email | JSON array or CSV of emails allowed to manage members/groups |
 
-`docker-compose.yml` requires `DATABASE_URL` plus the seed and session variables above.
+`docker-compose.yml` contains no secrets or environment values of its own — it reads everything from `env_file` (the deploy env file, `deploy/deploy.env.example` as a template). Only `PORT`, `UPLOAD_DIR` and `WEB_DIR` are set inside the container.
+
+`ADMIN_EMAILS` (JSON array or comma-separated) lists the accounts allowed to add/edit members and groups and to resend invitations; every other signed-in user can read members and create bills but gets `403` on those routes. The seed email is always an admin.
 
 People live in a single `users` table: login rows have a `password_hash`; bill-only people are created with a null password and a `display_name` for splitting. The `/api/members` routes still use that same table (column names in JSON stay `name`, `member_id`, etc.). Each row also stores a `language` (`en`/`vi`, default `en`) used as the interface language on devices that have not picked one; `/api/session` returns it to the client.
 

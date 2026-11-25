@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/WilliamTrung/bill-sharing/internal/accounts"
 	"github.com/WilliamTrung/bill-sharing/internal/auth"
 	"github.com/WilliamTrung/bill-sharing/internal/config"
 	"github.com/WilliamTrung/bill-sharing/internal/mail"
@@ -73,16 +74,18 @@ func (s *Server) routes() {
 	s.mux.Handle("PUT /api/profile", s.requireAuth(http.HandlerFunc(s.handleUpdateProfile)))
 	s.mux.Handle("PUT /api/profile/password", s.requireAuth(http.HandlerFunc(s.handleChangePassword)))
 
+	// Member management is admin-only; plain reads stay available so the bill form
+	// can still list people to split with.
+	s.mux.Handle("POST /api/members", s.requireAdmin(http.HandlerFunc(s.handleCreateMember)))
+	s.mux.Handle("PUT /api/members/{id}", s.requireAdmin(http.HandlerFunc(s.handleUpdateMember)))
+	s.mux.Handle("POST /api/members/{id}/invite", s.requireAdmin(http.HandlerFunc(s.handleSendInvite)))
 	s.mux.Handle("GET /api/members", s.requireAuth(http.HandlerFunc(s.handleListMembers)))
-	s.mux.Handle("POST /api/members", s.requireAuth(http.HandlerFunc(s.handleCreateMember)))
 	s.mux.Handle("GET /api/members/{id}", s.requireAuth(http.HandlerFunc(s.handleGetMember)))
-	s.mux.Handle("PUT /api/members/{id}", s.requireAuth(http.HandlerFunc(s.handleUpdateMember)))
-	s.mux.Handle("POST /api/members/{id}/invite", s.requireAuth(http.HandlerFunc(s.handleSendInvite)))
 
+	s.mux.Handle("POST /api/groups", s.requireAdmin(http.HandlerFunc(s.handleCreateGroup)))
+	s.mux.Handle("PUT /api/groups/{id}", s.requireAdmin(http.HandlerFunc(s.handleUpdateGroup)))
 	s.mux.Handle("GET /api/groups", s.requireAuth(http.HandlerFunc(s.handleListGroups)))
-	s.mux.Handle("POST /api/groups", s.requireAuth(http.HandlerFunc(s.handleCreateGroup)))
 	s.mux.Handle("GET /api/groups/{id}", s.requireAuth(http.HandlerFunc(s.handleGetGroup)))
-	s.mux.Handle("PUT /api/groups/{id}", s.requireAuth(http.HandlerFunc(s.handleUpdateGroup)))
 
 	s.mux.Handle("GET /api/bills", s.requireAuth(http.HandlerFunc(s.handleListBills)))
 	s.mux.Handle("POST /api/bills", s.requireAuth(http.HandlerFunc(s.handleCreateBill)))
@@ -103,6 +106,28 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// requireAdmin allows only signed-in users whose email is listed in ADMIN_EMAILS.
+func (s *Server) requireAdmin(next http.Handler) http.Handler {
+	return s.requireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		userID, ok := s.auth.RequestUser(r)
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "Authentication required")
+			return
+		}
+		user, err := accounts.GetUser(r.Context(), s.db, userID)
+		if err != nil {
+			s.logger.Error("load admin user", "error", err)
+			writeError(w, http.StatusInternalServerError, "Could not verify permissions")
+			return
+		}
+		if !s.cfg.IsAdminEmail(user.Email) {
+			writeError(w, http.StatusForbidden, "Only admins can manage members")
+			return
+		}
+		next.ServeHTTP(w, r)
+	}))
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {

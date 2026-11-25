@@ -57,6 +57,8 @@
       form.hidden = true;
       done.hidden = false;
       UI.toast(I18n.t("activate.success"), "success");
+      // The invite already set the session cookie, so go straight in.
+      window.setTimeout(() => window.location.replace("/dashboard.html"), 600);
     } catch (err) {
       showError(UI.errorMessage(err));
       submit.disabled = false;

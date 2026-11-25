@@ -164,10 +164,12 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"authenticated": true,
 		"language":      user.Language,
+		"is_admin":      s.cfg.IsAdminEmail(user.Email),
 		"user": map[string]any{
 			"id":           user.ID,
 			"username":     user.Username,
 			"display_name": user.DisplayName,
+			"email":        user.Email,
 		},
 	})
 }

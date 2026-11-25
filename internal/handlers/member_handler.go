@@ -162,7 +162,9 @@ func (s *Server) handleCreateMember(w http.ResponseWriter, r *http.Request) {
 	}
 	m.Groups = []models.MemberGroupRef{}
 
-	if s.mailer.Enabled() && deliverableEmail(m.Email) {
+	// Only invite when the admin actually supplied a real address; members added
+	// without one get a placeholder and simply can never sign in.
+	if deliverableEmail(in.Email) && s.mailer.Enabled() {
 		s.sendInvite(m.Name, m.Email, m.ID)
 	}
 

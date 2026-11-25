@@ -26,6 +26,8 @@
   const payerCancel = document.getElementById("payer-cancel");
   const participantsWrap = document.getElementById("participants");
   const participantsEmpty = document.getElementById("participants-empty");
+  const participantsNoMatch = document.getElementById("participants-no-match");
+  const participantSearch = document.getElementById("participant-search");
   const preview = document.getElementById("preview");
   const previewTotal = document.getElementById("preview-total");
   const previewTotalAmount = document.getElementById("preview-total-amount");
@@ -122,8 +124,22 @@
     return null;
   }
 
+  // Ratio weights live in the DOM; capture them before any re-render so typed
+  // values survive filtering and further selections.
+  function syncWeights() {
+    if (state.mode !== "RATIO") return;
+    for (const [key, entry] of state.selected) {
+      const input = document.querySelector(`[data-key="${key}"] input[data-role=weight]`);
+      if (!input) continue;
+      const value = Number.parseFloat(input.value);
+      if (Number.isFinite(value) && value > 0) entry.weight = value;
+    }
+  }
+
   function renderParticipants() {
+    syncWeights();
     participantsWrap.replaceChildren();
+    participantsNoMatch.classList.add("hidden");
     const actives = activeMembers();
     if (actives.length === 0) {
       participantsEmpty.classList.remove("hidden");
@@ -131,12 +147,23 @@
     }
     participantsEmpty.classList.add("hidden");
 
+    const query = participantSearch.value.trim().toLowerCase();
+    const matches = (name) => !query || name.toLowerCase().includes(query);
+
+    // A selected entry always stays visible so it can be unchecked.
+    let shown = 0;
     for (const member of actives) {
+      if (!matches(member.name) && !state.selected.has(selectionKey("MEMBER", member.id))) continue;
       participantsWrap.appendChild(buildChoice("MEMBER", member));
+      shown += 1;
     }
     for (const group of activeGroups()) {
+      if (!matches(group.name) && !state.selected.has(selectionKey("GROUP", group.id))) continue;
       participantsWrap.appendChild(buildChoice("GROUP", group));
+      shown += 1;
     }
+
+    if (shown === 0) participantsNoMatch.classList.remove("hidden");
     refreshConflictState();
   }
 
@@ -612,6 +639,7 @@
     updateCurrencyLabel();
     refresh();
   });
+  participantSearch.addEventListener("input", () => renderParticipants());
   participantsWrap.addEventListener("input", (event) => {
     if (event.target.matches("input[data-role=weight]")) renderPreview();
   });

@@ -31,7 +31,7 @@
           <p class="sub" data-i18n="admin.sub">People who share expenses, and the composite groups they form.</p>
         </div>
         <div class="head-actions">
-          <button class="btn" type="button" id="add-member" data-i18n="action.addMember">Add member</button>
+          <button class="btn" type="button" id="add-member" data-admin-only data-i18n="action.addMember">Add member</button>
         </div>
       </div>
 
@@ -68,7 +68,7 @@
             <h2 id="groups-title" data-i18n="admin.groupsTitle">Groups</h2>
             <div class="muted" data-i18n="admin.groupsHint">A group acts as a single participant on bills.</div>
           </div>
-          <button class="btn btn-ghost btn-sm" type="button" id="add-group" data-i18n="action.newGroup">New group</button>
+          <button class="btn btn-ghost btn-sm" type="button" id="add-group" data-admin-only data-i18n="action.newGroup">New group</button>
         </div>
         <div class="grid grid-auto" id="groups-grid"></div>
         <div class="empty hidden" id="groups-empty" data-i18n="admin.noGroups">No groups yet. Create one to split bills between couples or families.</div>

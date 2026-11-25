@@ -8,6 +8,7 @@
     editingGroupId: null,
     groupSplitType: "EVEN",
     groupContextMemberId: null,
+    isAdmin: false,
   };
 
   const membersBody = document.getElementById("members-body");
@@ -115,6 +116,7 @@
         actionsWrap.appendChild(inviteBtn);
       }
 
+      if (!state.isAdmin) actionsWrap.replaceChildren();
       actions.appendChild(actionsWrap);
       row.appendChild(actions);
 
@@ -150,7 +152,7 @@
       const editBtn = UI.el("button", "btn btn-quiet btn-sm", I18n.t("action.edit"));
       editBtn.type = "button";
       editBtn.addEventListener("click", () => openGroupModal(group));
-      head.appendChild(editBtn);
+      if (state.isAdmin) head.appendChild(editBtn);
       card.appendChild(head);
 
       const membersWrap = UI.el("div", "members");
@@ -414,8 +416,9 @@
     const createBtn = document.getElementById("drawer-create-group");
     createBtn.disabled = !member.is_active;
     createBtn.title = member.is_active ? "" : I18n.t("admin.activateFirst");
+    createBtn.classList.toggle("hidden", !state.isAdmin);
 
-    resendInviteBtn.classList.toggle("hidden", !canInvite(member));
+    resendInviteBtn.classList.toggle("hidden", !state.isAdmin || !canInvite(member));
     resendInviteBtn.title = canInvite(member) ? I18n.t("admin.resendInviteHint") : "";
     resendInviteBtn.dataset.memberId = String(member.id);
 
@@ -431,11 +434,25 @@
   }
 
   async function loadAll() {
-    const [members, groups] = await Promise.all([API.listMembers(), API.listGroups()]);
+    const [members, groups, session] = await Promise.all([
+      API.listMembers(),
+      API.listGroups(),
+      API.currentSession(),
+    ]);
     state.members = members;
     state.groups = groups;
+    state.isAdmin = Boolean(session && session.is_admin);
+    applyPermissions();
     renderMembers();
     renderGroups();
+  }
+
+  // Hide the management affordances for signed-in non-admins; the server
+  // rejects them anyway, this just avoids dead buttons.
+  function applyPermissions() {
+    document.querySelectorAll("[data-admin-only]").forEach((node) => {
+      node.classList.toggle("hidden", !state.isAdmin);
+    });
   }
 
   Chrome.onLanguageChange = () => {

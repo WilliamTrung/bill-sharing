@@ -29,6 +29,7 @@ type Config struct {
 	SMTPFrom       string
 	SMTPFromName   string
 	PublicBaseURL  string
+	AdminEmails    []string
 }
 
 func Load() (Config, error) {
@@ -53,6 +54,11 @@ func Load() (Config, error) {
 		SMTPFromName:   getenv("SMTP_FROM_NAME", "Share da Bill"),
 		PublicBaseURL:  strings.TrimRight(getenv("PUBLIC_BASE_URL", "http://localhost:8080"), "/"),
 	}
+
+	// ADMIN_EMAILS lists who may edit members and send invites. The seed account is
+	// always an admin so a misconfigured list can never lock everyone out.
+	cfg.AdminEmails = parseEmailList(os.Getenv("ADMIN_EMAILS"))
+	cfg.AdminEmails = appendUnique(cfg.AdminEmails, strings.ToLower(strings.TrimSpace(cfg.SeedEmail)))
 
 	if cfg.DatabaseURL == "" {
 		return Config{}, errors.New("DATABASE_URL is required")
@@ -111,4 +117,53 @@ func getInt64(key string, fallback int64) int64 {
 		return fallback
 	}
 	return parsed
+}
+
+// parseEmailList accepts either a JSON-style array (`["a@x","b@y"]`) or a plain
+// comma/semicolon-separated list (`a@x,b@y`), so ADMIN_EMAILS is easy to set in
+// shell env, compose, or a JSON-ish secret file.
+func parseEmailList(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	raw = strings.TrimSuffix(strings.TrimPrefix(raw, "["), "]")
+	raw = strings.NewReplacer("\"", "", "'", "", "\n", ",", "\r", "").Replace(raw)
+
+	out := make([]string, 0)
+	for _, part := range strings.FieldsFunc(raw, func(r rune) bool {
+		return r == ',' || r == ';' || r == ' ' || r == '\t'
+	}) {
+		email := strings.ToLower(strings.TrimSpace(part))
+		if email != "" {
+			out = appendUnique(out, email)
+		}
+	}
+	return out
+}
+
+func appendUnique(list []string, value string) []string {
+	if value == "" {
+		return list
+	}
+	for _, existing := range list {
+		if existing == value {
+			return list
+		}
+	}
+	return append(list, value)
+}
+
+// IsAdminEmail reports whether an address may manage members and send invites.
+func (c Config) IsAdminEmail(email string) bool {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if email == "" {
+		return false
+	}
+	for _, admin := range c.AdminEmails {
+		if admin == email {
+			return true
+		}
+	}
+	return false
 }

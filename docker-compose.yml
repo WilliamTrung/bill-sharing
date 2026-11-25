@@ -1,5 +1,9 @@
 # Public (MSI): http://bill-sharing.williamthanhtrung.id.vn (global-nginx -> bill-sharing-app:8080)
 # Postgres: shared-postgres on db-net (see deploy/msi-init-db.sh)
+#
+# All configuration and secrets live in the deploy env file (env_file below);
+# nothing deployment-specific is hard-coded here. See deploy/deploy.env.example
+# for the full list of variables the app reads.
 name: bill-sharing
 
 services:
@@ -11,24 +15,10 @@ services:
     env_file:
       - ${DEPLOY_ENV_FILE:-deploy/deploy.env.example}
     environment:
+      # Container-internal paths only; everything else comes from env_file.
       PORT: "8080"
-      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
-      SEED_USERNAME: ${SEED_USERNAME:-admin}
-      SEED_EMAIL: ${SEED_EMAIL:?SEED_EMAIL is required}
-      SEED_PASSWORD: ${SEED_PASSWORD:?SEED_PASSWORD is required}
-      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required}
       UPLOAD_DIR: /data/uploads
       WEB_DIR: /app/web
-      COOKIE_SECURE: ${COOKIE_SECURE:-true}
-      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-26214400}
-      CURRENCY: ${CURRENCY:-$$}
-      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
-      SMTP_PORT: ${SMTP_PORT:-587}
-      SMTP_USER: ${SMTP_USER:-}
-      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
-      SMTP_FROM: ${SMTP_FROM:-}
-      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Share da Bill}
-      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://bill-sharing.williamthanhtrung.id.vn}
     volumes:
       - uploads:/data/uploads
     ports:
