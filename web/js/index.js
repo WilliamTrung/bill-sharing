@@ -97,6 +97,9 @@
     for (const bill of bills) {
       const row = document.createElement("tr");
 
+      const toggleCell = document.createElement("td");
+      row.appendChild(toggleCell);
+
       const titleCell = document.createElement("td");
       const link = document.createElement("a");
       link.href = `/bill-detail.html?id=${bill.id}`;
@@ -123,9 +126,21 @@
       splitCell.appendChild(splitPill);
       row.appendChild(splitCell);
 
+      const settled = bill.status === "SETTLED";
+      const statusCell = document.createElement("td");
+      statusCell.appendChild(
+        UI.el(
+          "span",
+          `pill ${settled ? "pill-warn" : "pill-accent"}`,
+          I18n.t(settled ? "public.statusSettled" : "public.statusOpen")
+        )
+      );
+      row.appendChild(statusCell);
+
       row.appendChild(UI.el("td", "right num strong", Money.format(bill.total_amount_cents)));
 
       billsBody.appendChild(row);
+      Shares.mount(toggleCell, row, 7, bill.id, API.getBill);
     }
   }
 

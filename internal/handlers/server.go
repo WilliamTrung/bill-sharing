@@ -46,10 +46,16 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) routes() {
 	s.mux.HandleFunc("GET /healthz", s.handleHealth)
 
+	// Public: readable without a session.
 	s.mux.HandleFunc("POST /api/login", s.handleLogin)
+	s.mux.HandleFunc("GET /api/config", s.handleConfig)
+	s.mux.HandleFunc("GET /api/public/bills", s.handlePublicListBills)
+	s.mux.HandleFunc("GET /api/public/bills/{id}", s.handlePublicGetBill)
+	s.mux.HandleFunc("GET /uploads/{billID}/{filename}", s.handleUploadedFile)
+
+	// Authenticated: everything that mutates data or exposes member contact info.
 	s.mux.Handle("POST /api/logout", s.requireAuth(http.HandlerFunc(s.handleLogout)))
 	s.mux.Handle("GET /api/session", s.requireAuth(http.HandlerFunc(s.handleSession)))
-	s.mux.Handle("GET /api/config", s.requireAuth(http.HandlerFunc(s.handleConfig)))
 
 	s.mux.Handle("GET /api/members", s.requireAuth(http.HandlerFunc(s.handleListMembers)))
 	s.mux.Handle("POST /api/members", s.requireAuth(http.HandlerFunc(s.handleCreateMember)))
@@ -64,11 +70,10 @@ func (s *Server) routes() {
 	s.mux.Handle("GET /api/bills", s.requireAuth(http.HandlerFunc(s.handleListBills)))
 	s.mux.Handle("POST /api/bills", s.requireAuth(http.HandlerFunc(s.handleCreateBill)))
 	s.mux.Handle("GET /api/bills/{id}", s.requireAuth(http.HandlerFunc(s.handleGetBill)))
+	s.mux.Handle("PUT /api/bills/{id}/status", s.requireAuth(http.HandlerFunc(s.handleUpdateBillStatus)))
 	s.mux.Handle("DELETE /api/bills/{id}", s.requireAuth(http.HandlerFunc(s.handleDeleteBill)))
 
 	s.mux.Handle("GET /api/balances", s.requireAuth(http.HandlerFunc(s.handleBalances)))
-
-	s.mux.Handle("GET /uploads/{billID}/{filename}", s.requireAuth(http.HandlerFunc(s.handleUploadedFile)))
 
 	s.mux.HandleFunc("GET /", s.handleStatic)
 }
@@ -117,7 +122,7 @@ func staticPageRequiresAuth(file string) bool {
 		return false
 	}
 	switch file {
-	case "index.html", "login.html":
+	case "index.html", "login.html", "bill-detail.html":
 		return false
 	default:
 		return true

@@ -14,19 +14,31 @@
           <span class="brand" data-i18n="app.name">Bill Sharing</span>
           <div data-lang-switcher></div>
         </div>
-        <h1 data-i18n="login.heading">Admin sign in</h1>
-        <p class="sub" data-i18n="login.sub">Enter the admin password to manage members, groups and bills.</p>
+        <h1 data-i18n="login.heading">Sign in</h1>
+        <p class="sub" data-i18n="login.sub">Sign in to add bills and manage members and groups.</p>
 
         <form class="form" id="login-form" novalidate>
           <div class="field">
-            <label for="password" data-i18n="login.password">Admin password</label>
+            <label for="identifier" data-i18n="login.identifier">Username or email</label>
+            <input
+              id="identifier"
+              name="identifier"
+              type="text"
+              autocomplete="username"
+              data-i18n-placeholder="login.identifierPlaceholder"
+              placeholder="you@example.com"
+              required
+              autofocus
+            />
+          </div>
+          <div class="field">
+            <label for="password" data-i18n="login.password">Password</label>
             <input
               id="password"
               name="password"
               type="password"
               autocomplete="current-password"
               required
-              autofocus
             />
           </div>
           <div class="notice error hidden" id="login-error" role="alert"></div>

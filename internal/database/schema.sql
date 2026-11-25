@@ -1,3 +1,16 @@
+CREATE TABLE IF NOT EXISTS users (
+    id BIGSERIAL PRIMARY KEY,
+    username TEXT NOT NULL,
+    email TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users (lower(username));
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users (lower(email));
+
 CREATE TABLE IF NOT EXISTS members (
     id BIGSERIAL PRIMARY KEY,
     name TEXT NOT NULL,
@@ -36,6 +49,10 @@ CREATE TABLE IF NOT EXISTS bills (
     bill_date DATE NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+ALTER TABLE bills ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'OPEN';
+ALTER TABLE bills DROP CONSTRAINT IF EXISTS bills_status_check;
+ALTER TABLE bills ADD CONSTRAINT bills_status_check CHECK (status IN ('OPEN', 'SETTLED'));
 
 CREATE TABLE IF NOT EXISTS bill_participants (
     id BIGSERIAL PRIMARY KEY,

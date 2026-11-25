@@ -6,7 +6,7 @@ Self-hosted web app for splitting shared expenses between individuals and compos
 
 - **Backend:** Go 1.23, standard library `net/http` routing, PostgreSQL via `pgx`
 - **Frontend:** Vanilla HTML/CSS/ES2020, zero build step, served by the Go binary
-- **Auth:** Password sign-in issuing an HMAC-signed session cookie (HttpOnly, SameSite=Lax)
+- **Auth:** Email/password accounts (bcrypt), signing in with username **or** email; HMAC-signed session cookie (HttpOnly, SameSite=Lax). Reading bills is public; writing requires a session.
 - **Languages:** English and Vietnamese with a UI switcher
 
 ## Running
@@ -31,7 +31,9 @@ The app is published on `APP_HOST_PORT` (default `8080`). Postgres data and uplo
 | Variable | Required | Default | Notes |
 | --- | --- | --- | --- |
 | `DATABASE_URL` | yes | – | Postgres connection string |
-| `ADMIN_PASSWORD` | yes | – | Minimum 8 characters |
+| `SEED_USERNAME` | no | email local-part | Seed account username (min 3 chars) |
+| `SEED_EMAIL` | yes | – | Seed account email, also used to sign in |
+| `SEED_PASSWORD` | yes | – | Seed account password (min 8 chars) |
 | `SESSION_SECRET` | yes | – | Minimum 16 characters, signs session cookies |
 | `PORT` | no | `8080` | Listen port |
 | `UPLOAD_DIR` | no | `./uploads` | Receipt storage root |
@@ -79,19 +81,31 @@ Overlapping selections are rejected server-side with HTTP 400 and disabled clien
 
 ## API
 
+Public (no session):
+
 | Method | Endpoint |
 | --- | --- |
-| `POST` | `/api/login`, `/api/logout` |
-| `GET` | `/api/session`, `/api/config` |
+| `POST` | `/api/login` (`{"identifier","password"}` — username or email) |
+| `GET` | `/api/config` |
+| `GET` | `/api/public/bills` |
+| `GET` | `/api/public/bills/{id}` |
+| `GET` | `/uploads/{billID}/{filename}` |
+
+Authenticated:
+
+| Method | Endpoint |
+| --- | --- |
+| `POST` | `/api/logout` |
+| `GET` | `/api/session` |
 | `GET`/`POST` | `/api/members` |
 | `GET`/`PUT` | `/api/members/{id}` |
 | `GET`/`POST` | `/api/groups` |
 | `GET`/`PUT` | `/api/groups/{id}` |
 | `GET`/`POST` | `/api/bills` |
 | `GET`/`DELETE` | `/api/bills/{id}` |
+| `PUT` | `/api/bills/{id}/status` (`{"status":"OPEN"\|"SETTLED"}`) |
 | `GET` | `/api/balances` |
-| `GET` | `/uploads/{billID}/{filename}` |
 
 `POST /api/bills` accepts `multipart/form-data` with a `payload` JSON field and up to 10 `files` (JPEG, PNG, WebP, PDF; MIME sniffed server-side, stored under random names).
 
-All `/api` and `/uploads` routes require a valid session. The public home page is `/`; the bills dashboard is `/dashboard.html`; members and groups live at `/admin`. Other HTML pages redirect to `/login.html` when signed out.
+The public home page is `/` and lists every bill with its status and shared members; `/bill-detail.html?id=N` and its receipt evidence are also public. Adding bills and managing members, groups and statuses requires signing in at `/login.html`; those pages redirect there when signed out.

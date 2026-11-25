@@ -2,6 +2,15 @@ package models
 
 import "time"
 
+type User struct {
+	ID        int64     `json:"id"`
+	Username  string    `json:"username"`
+	Email     string    `json:"email"`
+	IsActive  bool      `json:"is_active"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 type MemberGroupRef struct {
 	ID   int64  `json:"id"`
 	Name string `json:"name"`
@@ -44,10 +53,25 @@ type BillSummary struct {
 	PaidByMemberID   int64     `json:"paid_by_member_id"`
 	PaidByName       string    `json:"paid_by_name"`
 	SplitMode        string    `json:"split_mode"`
+	Status           string    `json:"status"`
 	BillDate         string    `json:"bill_date"`
 	CreatedAt        time.Time `json:"created_at"`
 	AttachmentCount  int       `json:"attachment_count"`
 	ParticipantCount int       `json:"participant_count"`
+}
+
+type PublicBillSummary struct {
+	ID               int64    `json:"id"`
+	Title            string   `json:"title"`
+	Description      string   `json:"description"`
+	TotalAmountCents int64    `json:"total_amount_cents"`
+	PaidByName       string   `json:"paid_by_name"`
+	SplitMode        string   `json:"split_mode"`
+	Status           string   `json:"status"`
+	BillDate         string   `json:"bill_date"`
+	AttachmentCount  int      `json:"attachment_count"`
+	ParticipantCount int      `json:"participant_count"`
+	Members          []string `json:"members"`
 }
 
 type BillParticipant struct {

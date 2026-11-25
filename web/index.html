@@ -7,26 +7,63 @@
     <link rel="stylesheet" href="/css/styles.css" />
   </head>
   <body>
-    <main class="login-wrap">
-      <div class="login-card">
-        <div class="spread">
-          <span class="brand" data-i18n="app.name">Bill Sharing</span>
+    <header class="topbar">
+      <div class="shell topbar-inner">
+        <a class="brand" href="/" data-i18n="app.name">Bill Sharing</a>
+        <div class="topbar-actions">
           <div data-lang-switcher></div>
+          <a class="btn btn-quiet" href="/login.html" data-i18n="home.signIn">Sign in</a>
         </div>
-        <h1 data-i18n="home.heading">Split shared expenses with your group</h1>
-        <p class="sub" data-i18n="home.sub">
-          Track bills, net balances, and receipt attachments for couples, families, and housemates.
-        </p>
-        <p class="muted small" data-i18n="home.adminNote">
-          Sign in to manage bills and open the admin area at <code>/admin</code> for members and groups.
-        </p>
-        <a class="btn btn-block" href="/login.html" data-i18n="home.signIn">Sign in</a>
       </div>
+    </header>
+
+    <main class="shell main">
+      <div class="page-head">
+        <div>
+          <div class="eyebrow" data-i18n="app.eyebrow.overview">Overview</div>
+          <h1 data-i18n="public.heading">Shared bills</h1>
+          <p class="sub" data-i18n="public.sub">Everything being shared right now, who is involved, and its status.</p>
+        </div>
+      </div>
+
+      <section class="grid grid-3" id="summary" aria-label="Summary"></section>
+
+      <section class="card" aria-labelledby="bills-title">
+        <div class="card-head">
+          <div>
+            <h2 id="bills-title" data-i18n="public.heading">Shared bills</h2>
+            <div class="muted" id="bills-hint" data-i18n="public.sub"></div>
+          </div>
+          <div class="segmented" id="bills-filter" role="group" aria-label="Bill filter">
+            <button type="button" data-filter="ongoing" class="active" data-i18n="public.ongoing">Ongoing</button>
+            <button type="button" data-filter="all" data-i18n="public.all">All</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="table" id="bills-table">
+            <thead>
+              <tr>
+                <th class="shares-toggle-col"><span class="sr-only">Expand</span></th>
+                <th data-i18n="index.bill">Bill</th>
+                <th data-i18n="index.date">Date</th>
+                <th data-i18n="index.paidBy">Paid by</th>
+                <th data-i18n="public.members">Shared with</th>
+                <th data-i18n="index.status">Status</th>
+                <th class="right" data-i18n="index.amount">Amount</th>
+              </tr>
+            </thead>
+            <tbody id="bills-body"></tbody>
+          </table>
+        </div>
+        <div class="empty hidden" id="bills-empty">
+          <span id="bills-empty-text" data-i18n="public.none">No bills shared yet.</span>
+        </div>
+      </section>
     </main>
 
     <script src="/js/i18n.js"></script>
-    <script>
-      I18n.init();
-    </script>
+    <script src="/js/api.js"></script>
+    <script src="/js/common.js"></script>
+    <script src="/js/public-list.js"></script>
   </body>
 </html>

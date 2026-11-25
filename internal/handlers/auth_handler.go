@@ -1,13 +1,14 @@
 package handlers
 
 import (
-	"crypto/subtle"
+	"errors"
 	"net"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/WilliamTrung/bill-sharing/internal/accounts"
 	"github.com/WilliamTrung/bill-sharing/internal/auth"
 )
 
@@ -64,7 +65,8 @@ func (l *loginLimiter) reset(key string) {
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Password string `json:"password"`
+		Identifier string `json:"identifier"`
+		Password   string `json:"password"`
 	}
 	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -77,25 +79,33 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	expected := []byte(s.cfg.AdminPassword)
-	provided := []byte(body.Password)
-	if subtle.ConstantTimeCompare(expected, provided) != 1 {
-		s.limiter.fail(key)
-		writeError(w, http.StatusUnauthorized, "Incorrect password")
+	user, err := accounts.Authenticate(r.Context(), s.db, body.Identifier, body.Password)
+	if err != nil {
+		if errors.Is(err, accounts.ErrInvalidCredentials) {
+			s.limiter.fail(key)
+			writeError(w, http.StatusUnauthorized, "Incorrect username, email or password")
+			return
+		}
+		s.logger.Error("authenticate", "error", err)
+		writeError(w, http.StatusInternalServerError, "Could not sign in")
 		return
 	}
 	s.limiter.reset(key)
 
 	http.SetCookie(w, &http.Cookie{
 		Name:     auth.CookieName,
-		Value:    s.auth.Issue(time.Now()),
+		Value:    s.auth.Issue(user.ID, time.Now()),
 		Path:     "/",
 		HttpOnly: true,
 		Secure:   s.cfg.CookieSecure,
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   int(s.auth.TTL().Seconds()),
 	})
-	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":       true,
+		"username": user.Username,
+		"email":    user.Email,
+	})
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {

@@ -12,7 +12,9 @@ import (
 type Config struct {
 	Port           string
 	DatabaseURL    string
-	AdminPassword  string
+	SeedUsername   string
+	SeedEmail      string
+	SeedPassword   string
 	SessionSecret  string
 	UploadDir      string
 	WebDir         string
@@ -26,7 +28,9 @@ func Load() (Config, error) {
 	cfg := Config{
 		Port:           getenv("PORT", "8080"),
 		DatabaseURL:    strings.TrimSpace(os.Getenv("DATABASE_URL")),
-		AdminPassword:  os.Getenv("ADMIN_PASSWORD"),
+		SeedUsername:   strings.TrimSpace(os.Getenv("SEED_USERNAME")),
+		SeedEmail:      strings.TrimSpace(os.Getenv("SEED_EMAIL")),
+		SeedPassword:   os.Getenv("SEED_PASSWORD"),
 		SessionSecret:  os.Getenv("SESSION_SECRET"),
 		UploadDir:      getenv("UPLOAD_DIR", "./uploads"),
 		WebDir:         getenv("WEB_DIR", "./web"),
@@ -39,8 +43,17 @@ func Load() (Config, error) {
 	if cfg.DatabaseURL == "" {
 		return Config{}, errors.New("DATABASE_URL is required")
 	}
-	if len(cfg.AdminPassword) < 8 {
-		return Config{}, errors.New("ADMIN_PASSWORD is required and must be at least 8 characters")
+	if cfg.SeedUsername == "" && cfg.SeedEmail != "" {
+		cfg.SeedUsername = strings.SplitN(cfg.SeedEmail, "@", 2)[0]
+	}
+	if len(cfg.SeedUsername) < 3 {
+		return Config{}, errors.New("SEED_USERNAME is required and must be at least 3 characters")
+	}
+	if !strings.Contains(cfg.SeedEmail, "@") {
+		return Config{}, errors.New("SEED_EMAIL is required and must be a valid email")
+	}
+	if len(cfg.SeedPassword) < 8 {
+		return Config{}, errors.New("SEED_PASSWORD is required and must be at least 8 characters")
 	}
 	if len(cfg.SessionSecret) < 16 {
 		return Config{}, errors.New("SESSION_SECRET is required and must be at least 16 characters")

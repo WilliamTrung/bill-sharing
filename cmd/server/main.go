@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/WilliamTrung/bill-sharing/internal/accounts"
 	"github.com/WilliamTrung/bill-sharing/internal/config"
 	"github.com/WilliamTrung/bill-sharing/internal/database"
 	"github.com/WilliamTrung/bill-sharing/internal/handlers"
@@ -48,6 +49,12 @@ func run(logger *slog.Logger) error {
 	if err := database.Migrate(ctx, db); err != nil {
 		return err
 	}
+
+	outcome, err := accounts.EnsureSeed(ctx, db, cfg.SeedUsername, cfg.SeedEmail, cfg.SeedPassword)
+	if err != nil {
+		return fmt.Errorf("seed account: %w", err)
+	}
+	logger.Info("seed account ready", "outcome", outcome, "username", cfg.SeedUsername)
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,

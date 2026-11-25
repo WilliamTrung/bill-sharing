@@ -434,8 +434,8 @@ func (s *Server) storeBill(ctx context.Context, plan *billPlan, attachments []pr
 
 	var billID int64
 	if err := tx.QueryRow(ctx, `
-		INSERT INTO bills (title, description, total_amount_cents, paid_by_member_id, split_mode, bill_date)
-		VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+		INSERT INTO bills (title, description, total_amount_cents, paid_by_member_id, split_mode, status, bill_date)
+		VALUES ($1, $2, $3, $4, $5, 'OPEN', $6) RETURNING id`,
 		plan.Title, plan.Description, plan.TotalCents, plan.PayerID, plan.SplitMode, plan.BillDate,
 	).Scan(&billID); err != nil {
 		return 0, err
@@ -584,7 +584,7 @@ func randomFilename() string {
 func (s *Server) handleListBills(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.db.Query(r.Context(), `
 		SELECT b.id, b.title, b.description, b.total_amount_cents, b.paid_by_member_id, m.name,
-		       b.split_mode, b.bill_date, b.created_at,
+		       b.split_mode, b.status, b.bill_date, b.created_at,
 		       (SELECT COUNT(*) FROM bill_attachments a WHERE a.bill_id = b.id),
 		       (SELECT COUNT(*) FROM bill_participants p WHERE p.bill_id = b.id)
 		FROM bills b
@@ -602,7 +602,7 @@ func (s *Server) handleListBills(w http.ResponseWriter, r *http.Request) {
 		var b models.BillSummary
 		var billDate time.Time
 		if err := rows.Scan(&b.ID, &b.Title, &b.Description, &b.TotalAmountCents,
-			&b.PaidByMemberID, &b.PaidByName, &b.SplitMode, &billDate, &b.CreatedAt,
+			&b.PaidByMemberID, &b.PaidByName, &b.SplitMode, &b.Status, &billDate, &b.CreatedAt,
 			&b.AttachmentCount, &b.ParticipantCount); err != nil {
 			s.logger.Error("scan bill", "error", err)
 			writeError(w, http.StatusInternalServerError, "Could not load bills")
@@ -616,6 +616,133 @@ func (s *Server) handleListBills(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, bills)
+}
+
+func (s *Server) handlePublicListBills(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	rows, err := s.db.Query(ctx, `
+		SELECT b.id, b.title, b.description, b.total_amount_cents, m.name,
+		       b.split_mode, b.status, b.bill_date,
+		       (SELECT COUNT(*) FROM bill_attachments a WHERE a.bill_id = b.id),
+		       (SELECT COUNT(*) FROM bill_participants p WHERE p.bill_id = b.id)
+		FROM bills b
+		JOIN members m ON m.id = b.paid_by_member_id
+		ORDER BY b.bill_date DESC, b.id DESC`)
+	if err != nil {
+		s.logger.Error("list public bills", "error", err)
+		writeError(w, http.StatusInternalServerError, "Could not load bills")
+		return
+	}
+	defer rows.Close()
+
+	bills := make([]models.PublicBillSummary, 0)
+	ids := make([]int64, 0)
+	for rows.Next() {
+		var b models.PublicBillSummary
+		var billDate time.Time
+		if err := rows.Scan(&b.ID, &b.Title, &b.Description, &b.TotalAmountCents, &b.PaidByName,
+			&b.SplitMode, &b.Status, &billDate, &b.AttachmentCount, &b.ParticipantCount); err != nil {
+			s.logger.Error("scan public bill", "error", err)
+			writeError(w, http.StatusInternalServerError, "Could not load bills")
+			return
+		}
+		b.BillDate = billDate.Format("2006-01-02")
+		b.Members = []string{}
+		bills = append(bills, b)
+		ids = append(ids, b.ID)
+	}
+	if err := rows.Err(); err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not load bills")
+		return
+	}
+	if len(ids) == 0 {
+		writeJSON(w, http.StatusOK, bills)
+		return
+	}
+
+	memberRows, err := s.db.Query(ctx, `
+		SELECT s.bill_id, m.name
+		FROM bill_member_shares s
+		JOIN members m ON m.id = s.member_id
+		WHERE s.bill_id = ANY($1)
+		ORDER BY m.name ASC`, ids)
+	if err != nil {
+		s.logger.Error("list public bill members", "error", err)
+		writeError(w, http.StatusInternalServerError, "Could not load bills")
+		return
+	}
+	defer memberRows.Close()
+
+	membersByBill := make(map[int64][]string, len(ids))
+	for memberRows.Next() {
+		var billID int64
+		var name string
+		if err := memberRows.Scan(&billID, &name); err != nil {
+			writeError(w, http.StatusInternalServerError, "Could not load bills")
+			return
+		}
+		membersByBill[billID] = append(membersByBill[billID], name)
+	}
+	if err := memberRows.Err(); err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not load bills")
+		return
+	}
+
+	for i := range bills {
+		if names := membersByBill[bills[i].ID]; names != nil {
+			bills[i].Members = names
+		}
+	}
+	writeJSON(w, http.StatusOK, bills)
+}
+
+func (s *Server) handlePublicGetBill(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	bill, err := s.loadBill(r.Context(), id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeError(w, http.StatusNotFound, "Bill not found")
+		return
+	}
+	if err != nil {
+		s.logger.Error("load public bill", "error", err)
+		writeError(w, http.StatusInternalServerError, "Could not load bill")
+		return
+	}
+	writeJSON(w, http.StatusOK, bill)
+}
+
+func (s *Server) handleUpdateBillStatus(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	var body struct {
+		Status string `json:"status"`
+	}
+	if err := readJSON(w, r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	status := strings.ToUpper(strings.TrimSpace(body.Status))
+	if status != "OPEN" && status != "SETTLED" {
+		writeError(w, http.StatusBadRequest, "Status must be OPEN or SETTLED")
+		return
+	}
+
+	tag, err := s.db.Exec(r.Context(), `UPDATE bills SET status = $1 WHERE id = $2`, status, id)
+	if err != nil {
+		s.logger.Error("update bill status", "error", err)
+		writeError(w, http.StatusInternalServerError, "Could not update bill")
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		writeError(w, http.StatusNotFound, "Bill not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": status})
 }
 
 func (s *Server) handleGetBill(w http.ResponseWriter, r *http.Request) {
@@ -641,14 +768,14 @@ func (s *Server) loadBill(ctx context.Context, id int64) (models.Bill, error) {
 	var billDate time.Time
 	err := s.db.QueryRow(ctx, `
 		SELECT b.id, b.title, b.description, b.total_amount_cents, b.paid_by_member_id, m.name,
-		       b.split_mode, b.bill_date, b.created_at,
+		       b.split_mode, b.status, b.bill_date, b.created_at,
 		       (SELECT COUNT(*) FROM bill_attachments a WHERE a.bill_id = b.id),
 		       (SELECT COUNT(*) FROM bill_participants p WHERE p.bill_id = b.id)
 		FROM bills b
 		JOIN members m ON m.id = b.paid_by_member_id
 		WHERE b.id = $1`, id,
 	).Scan(&bill.ID, &bill.Title, &bill.Description, &bill.TotalAmountCents,
-		&bill.PaidByMemberID, &bill.PaidByName, &bill.SplitMode, &billDate, &bill.CreatedAt,
+		&bill.PaidByMemberID, &bill.PaidByName, &bill.SplitMode, &bill.Status, &billDate, &bill.CreatedAt,
 		&bill.AttachmentCount, &bill.ParticipantCount)
 	if err != nil {
 		return models.Bill{}, err

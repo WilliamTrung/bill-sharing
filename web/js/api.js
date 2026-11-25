@@ -19,22 +19,24 @@ const API = (() => {
     return translated && translated !== raw ? translated : raw;
   }
 
-  async function request(method, path, body) {
-    const options = { method, credentials: "same-origin", headers: {} };
+  async function request(method, path, body, options) {
+    const opts = options || {};
+    const redirectOn401 = opts.redirectOn401 !== false;
+    const req = { method, credentials: "same-origin", headers: {} };
     if (body !== undefined) {
-      options.headers["Content-Type"] = "application/json";
-      options.body = JSON.stringify(body);
+      req.headers["Content-Type"] = "application/json";
+      req.body = JSON.stringify(body);
     }
 
     let response;
     try {
-      response = await fetch(path, options);
+      response = await fetch(path, req);
     } catch (err) {
       throw new ApiError(tr("msg.networkError"), 0);
     }
 
     if (response.status === 401 && !path.startsWith("/api/login")) {
-      redirectToLogin();
+      if (redirectOn401) redirectToLogin();
       throw new ApiError(tr("msg.sessionExpired"), 401);
     }
 
@@ -82,8 +84,8 @@ const API = (() => {
       return currency;
     },
 
-    login(password) {
-      return request("POST", "/api/login", { password });
+    login(identifier, password) {
+      return request("POST", "/api/login", { identifier, password });
     },
 
     logout() {
@@ -92,6 +94,26 @@ const API = (() => {
 
     session() {
       return request("GET", "/api/session");
+    },
+
+    async currentSession() {
+      try {
+        return await request("GET", "/api/session", undefined, { redirectOn401: false });
+      } catch (err) {
+        return null;
+      }
+    },
+
+    publicBills() {
+      return request("GET", "/api/public/bills", undefined, { redirectOn401: false });
+    },
+
+    publicBill(id) {
+      return request("GET", `/api/public/bills/${id}`, undefined, { redirectOn401: false });
+    },
+
+    updateBillStatus(id, status) {
+      return request("PUT", `/api/bills/${id}/status`, { status });
     },
 
     listMembers() {
