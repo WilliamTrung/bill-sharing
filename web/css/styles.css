@@ -245,6 +245,10 @@ a:hover {
   margin-top: 22px;
 }
 
+.settle-card {
+  margin-top: 22px;
+}
+
 .card-head {
   display: flex;
   align-items: center;

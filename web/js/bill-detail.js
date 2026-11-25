@@ -161,28 +161,47 @@
       row.appendChild(UI.el("td", "right num strong", Money.format(share.owed_amount_cents)));
       total += BigInt(share.owed_amount_cents);
 
-      // Per-share settle control. Only the bill's payer (or an admin) confirms it,
-      // and each member is settled on its own.
+      // Settlement cell. The payer sees approve/reject icons; a debtor sees a
+      // "request" toggle (their claim still needs the payer's confirmation).
       const actionCell = document.createElement("td");
       actionCell.className = "right";
-      if (canSettleShares()) {
-        const settled = share.is_settled === true;
-        const pill = UI.el(
-          "span",
-          `pill ${settled ? "pill-accent" : "pill-warn"}`,
-          I18n.t(settled ? "detail.shareSettled" : "detail.shareOpen")
-        );
-        const button = UI.el("button", "btn btn-quiet btn-sm", I18n.t(settled ? "detail.shareMarkOpen" : "detail.shareMarkSettled"));
-        button.type = "button";
-        button.dataset.icon = settled ? "undo" : "check";
-        button.addEventListener("click", () => toggleShareSettled(share, button));
+      const isPayerShare = cache.bill && share.member_id === cache.bill.paid_by_member_id;
+      const settled = share.is_settled === true;
+      const requested = Boolean(share.settle_requested_at);
+
+      if (isPayerShare) {
+        actionCell.appendChild(UI.el("span", "pill pill-accent", I18n.t("detail.payerPaid")));
+      } else if (canSettleShares()) {
         const wrap = UI.el("div", "inline");
-        wrap.appendChild(pill);
-        wrap.appendChild(button);
+        if (settled) {
+          wrap.appendChild(UI.el("span", "pill pill-accent", I18n.t("detail.shareSettled")));
+          wrap.appendChild(settleIconButton("undo", "detail.shareMarkOpen", () => shareAction(share, "reopen")));
+        } else if (requested) {
+          wrap.appendChild(UI.el("span", "pill pill-warn", I18n.t("detail.shareRequested")));
+          wrap.appendChild(settleIconButton("check", "detail.approve", () => shareAction(share, "settle")));
+          wrap.appendChild(settleIconButton("x", "detail.reject", () => shareAction(share, "reject")));
+        } else {
+          wrap.appendChild(UI.el("span", "pill pill-warn", I18n.t("detail.shareOpen")));
+          wrap.appendChild(settleIconButton("check", "detail.shareMarkSettled", () => shareAction(share, "settle")));
+        }
         Icons.apply(wrap);
         actionCell.appendChild(wrap);
-      } else if (share.is_settled === true) {
+      } else if (isDebtorShare(share)) {
+        const wrap = UI.el("div", "inline");
+        if (settled) {
+          wrap.appendChild(UI.el("span", "pill pill-accent", I18n.t("detail.shareSettled")));
+        } else if (requested) {
+          wrap.appendChild(UI.el("span", "pill pill-warn", I18n.t("detail.sharePending")));
+        } else {
+          wrap.appendChild(UI.el("span", "pill pill-warn", I18n.t("detail.shareOpen")));
+          wrap.appendChild(settleIconButton("check", "detail.iHavePaid", () => shareAction(share, "request")));
+        }
+        Icons.apply(wrap);
+        actionCell.appendChild(wrap);
+      } else if (settled) {
         actionCell.appendChild(UI.el("span", "pill pill-accent", I18n.t("detail.shareSettled")));
+      } else if (requested) {
+        actionCell.appendChild(UI.el("span", "pill pill-warn", I18n.t("detail.shareRequested")));
       }
       row.appendChild(actionCell);
 
@@ -266,23 +285,38 @@
     renderGallery();
   }
 
-  async function toggleShareSettled(share, button) {
-    const next = share.is_settled !== true;
-    if (next) {
+  // isDebtorShare reports whether the signed-in user owes this particular share.
+  function isDebtorShare(share) {
+    return Boolean(state.userId) && share.member_id === state.userId;
+  }
+
+  // settleIconButton builds an icon-only control with an accessible tooltip.
+  function settleIconButton(icon, labelKey, onClick) {
+    const label = I18n.t(labelKey);
+    const button = UI.el("button", "btn btn-quiet btn-sm btn-icon");
+    button.type = "button";
+    button.dataset.icon = icon;
+    button.title = label;
+    button.setAttribute("aria-label", label);
+    button.addEventListener("click", onClick);
+    return button;
+  }
+
+  async function shareAction(share, action) {
+    if (action === "settle") {
       const confirmed = window.confirm(
         I18n.t("detail.confirmSettle", { name: share.member_name, amount: Money.format(share.owed_amount_cents) })
       );
       if (!confirmed) return;
     }
-    button.disabled = true;
     try {
-      const result = await API.updateShareSettled(cache.bill.id, share.id, next);
+      const result = await API.updateShareSettled(cache.bill.id, share.id, action);
       share.is_settled = result.is_settled;
+      share.settle_requested_at = result.requested ? new Date().toISOString() : null;
       renderShares();
       UI.toast(I18n.t("detail.shareUpdated"), "success");
     } catch (err) {
       UI.toast(UI.errorMessage(err), "error");
-      button.disabled = false;
     }
   }
 

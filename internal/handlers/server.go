@@ -95,6 +95,7 @@ func (s *Server) routes() {
 	s.mux.Handle("DELETE /api/bills/{id}", s.requireAuth(http.HandlerFunc(s.handleDeleteBill)))
 
 	s.mux.Handle("GET /api/balances", s.requireAuth(http.HandlerFunc(s.handleBalances)))
+	s.mux.Handle("GET /api/settlements", s.requireAuth(http.HandlerFunc(s.handleSettlements)))
 
 	s.mux.HandleFunc("GET /", s.handleStatic)
 }
@@ -203,6 +204,12 @@ func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
 	// The server decides access to admin pages; a non-admin is sent back to the
 	// dashboard rather than being handed the management UI.
 	if adminOnlyPage(name) && !s.requestIsAdmin(r) {
+		http.Redirect(w, r, "/dashboard.html", http.StatusFound)
+		return
+	}
+
+	// Signed-in visitors landing on the public home are taken to their dashboard.
+	if name == "index.html" && s.auth.RequestValid(r) {
 		http.Redirect(w, r, "/dashboard.html", http.StatusFound)
 		return
 	}

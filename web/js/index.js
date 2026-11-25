@@ -5,7 +5,7 @@
   const billsBody = document.getElementById("bills-body");
   const billsEmpty = document.getElementById("bills-empty");
 
-  const cache = { bills: [], balances: [] };
+  const cache = { bills: [], balances: [], settlements: [] };
 
   function unit(key, singularKey, count) {
     return I18n.t(count === 1 ? singularKey : key);
@@ -150,9 +150,98 @@
     Rows.apply(billsBody);
   }
 
+  const settleBody = document.getElementById("settle-body");
+  const settleEmpty = document.getElementById("settle-empty");
+
+  function iconButton(icon, labelKey, onClick) {
+    const label = I18n.t(labelKey);
+    const button = UI.el("button", "btn btn-quiet btn-sm btn-icon");
+    button.type = "button";
+    button.dataset.icon = icon;
+    button.title = label;
+    button.setAttribute("aria-label", label);
+    button.addEventListener("click", onClick);
+    return button;
+  }
+
+  async function actOnShare(item, action) {
+    if (action === "settle") {
+      const ok = window.confirm(
+        I18n.t("detail.confirmSettle", { name: item.counterparty_name, amount: Money.format(item.owed_amount_cents) })
+      );
+      if (!ok) return;
+    }
+    try {
+      await API.updateShareSettled(item.bill_id, item.share_id, action);
+      UI.toast(I18n.t("index.settleUpdated"), "success");
+      cache.settlements = await API.settlements();
+      renderSettlements(cache.settlements);
+    } catch (err) {
+      UI.toast(UI.errorMessage(err), "error");
+    }
+  }
+
+  function renderSettlements(items) {
+    settleBody.replaceChildren();
+    if (!items || items.length === 0) {
+      settleEmpty.classList.remove("hidden");
+      return;
+    }
+    settleEmpty.classList.add("hidden");
+
+    for (const item of items) {
+      const row = document.createElement("tr");
+      row.dataset.href = `/bill-detail.html?id=${item.bill_id}`;
+
+      const titleCell = document.createElement("td");
+      titleCell.appendChild(UI.el("div", "strong", item.bill_title));
+      titleCell.appendChild(UI.el("div", "small faint", UI.formatDate(item.bill_date)));
+      row.appendChild(titleCell);
+
+      row.appendChild(UI.el("td", "small", item.counterparty_name));
+      row.appendChild(
+        UI.el(
+          "td",
+          "small",
+          I18n.t(item.role === "payer" ? "index.rolePayer" : "index.roleDebtor")
+        )
+      );
+      row.appendChild(UI.el("td", "right num strong", Money.format(item.owed_amount_cents)));
+
+      const actionCell = document.createElement("td");
+      actionCell.className = "right";
+      // Keep these controls from triggering the row's navigation.
+      actionCell.addEventListener("click", (event) => event.stopPropagation());
+      const wrap = UI.el("div", "inline");
+
+      if (item.role === "payer") {
+        if (item.requested) {
+          wrap.appendChild(UI.el("span", "pill pill-warn", I18n.t("detail.shareRequested")));
+          wrap.appendChild(iconButton("check", "detail.approve", () => actOnShare(item, "settle")));
+          wrap.appendChild(iconButton("x", "detail.reject", () => actOnShare(item, "reject")));
+        } else {
+          wrap.appendChild(UI.el("span", "pill pill-warn", I18n.t("detail.shareOpen")));
+          wrap.appendChild(iconButton("check", "detail.shareMarkSettled", () => actOnShare(item, "settle")));
+        }
+      } else if (item.requested) {
+        wrap.appendChild(UI.el("span", "pill pill-warn", I18n.t("detail.sharePending")));
+      } else {
+        wrap.appendChild(UI.el("span", "pill pill-warn", I18n.t("detail.shareOpen")));
+        wrap.appendChild(iconButton("check", "detail.iHavePaid", () => actOnShare(item, "request")));
+      }
+
+      Icons.apply(wrap);
+      actionCell.appendChild(wrap);
+      row.appendChild(actionCell);
+      settleBody.appendChild(row);
+    }
+    Rows.apply(settleBody);
+  }
+
   function renderAll() {
     renderSummary(cache.bills, cache.balances);
     renderBalances(cache.balances);
+    renderSettlements(cache.settlements);
     renderBills(cache.bills);
   }
 
@@ -160,9 +249,14 @@
 
   Chrome.start({
     async onReady() {
-      const [bills, balances] = await Promise.all([API.listBills(), API.balances()]);
+      const [bills, balances, settlements] = await Promise.all([
+        API.listBills(),
+        API.balances(),
+        API.settlements(),
+      ]);
       cache.bills = bills;
       cache.balances = balances;
+      cache.settlements = settlements;
       renderAll();
     },
   });

@@ -87,6 +87,9 @@ CREATE TABLE IF NOT EXISTS bill_member_shares (
 -- A single member's share can be settled while the bill stays open.
 ALTER TABLE bill_member_shares ADD COLUMN IF NOT EXISTS is_settled BOOLEAN NOT NULL DEFAULT FALSE;
 
+-- Set when the debtor says "I have paid"; the payer then approves or rejects.
+ALTER TABLE bill_member_shares ADD COLUMN IF NOT EXISTS settle_requested_at TIMESTAMPTZ;
+
 CREATE TABLE IF NOT EXISTS bill_attachments (
     id BIGSERIAL PRIMARY KEY,
     bill_id BIGINT NOT NULL REFERENCES bills(id) ON DELETE CASCADE,

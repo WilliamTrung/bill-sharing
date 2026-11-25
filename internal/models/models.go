@@ -95,12 +95,26 @@ type BillParticipant struct {
 }
 
 type BillMemberShare struct {
-	ID              int64  `json:"id"`
-	MemberID        int64  `json:"member_id"`
-	MemberName      string `json:"member_name"`
-	SourceGroupID   *int64 `json:"source_group_id,omitempty"`
-	OwedAmountCents int64  `json:"owed_amount_cents"`
-	IsSettled       bool   `json:"is_settled"`
+	ID              int64      `json:"id"`
+	MemberID        int64      `json:"member_id"`
+	MemberName      string     `json:"member_name"`
+	SourceGroupID   *int64     `json:"source_group_id,omitempty"`
+	OwedAmountCents int64      `json:"owed_amount_cents"`
+	IsSettled       bool       `json:"is_settled"`
+	SettleRequested *time.Time `json:"settle_requested_at,omitempty"`
+}
+
+// SettlementItem is one row in the dashboard's "to settle" list.
+type SettlementItem struct {
+	ShareID          int64  `json:"share_id"`
+	BillID           int64  `json:"bill_id"`
+	BillTitle        string `json:"bill_title"`
+	BillDate         string `json:"bill_date"`
+	OwedAmountCents  int64  `json:"owed_amount_cents"`
+	Role             string `json:"role"` // "debtor" or "payer"
+	CounterpartyName string `json:"counterparty_name"`
+	IsSettled        bool   `json:"is_settled"`
+	Requested        bool   `json:"requested"`
 }
 
 type Attachment struct {

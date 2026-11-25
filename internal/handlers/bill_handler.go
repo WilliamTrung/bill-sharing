@@ -71,6 +71,9 @@ type plannedShare struct {
 	MemberID      int64
 	SourceGroupID *int64
 	Owed          int64
+	// InPayerGroup is true when this share comes from a group that contains the
+	// payer, so the whole group is considered already paid.
+	InPayerGroup bool
 }
 
 type billPlan struct {
@@ -317,12 +320,22 @@ func (s *Server) buildBillPlan(ctx context.Context, payload billPayload) (*billP
 		if err != nil {
 			return nil, err
 		}
+		// A group that includes the payer is settled as a whole: the payer already
+		// covered that money.
+		groupHasPayer := false
+		for _, member := range group.Members {
+			if member.MemberID == plan.PayerID {
+				groupHasPayer = true
+				break
+			}
+		}
 		for j, member := range group.Members {
 			sourceGroupID := group.ID
 			plan.Shares = append(plan.Shares, plannedShare{
 				MemberID:      member.MemberID,
 				SourceGroupID: &sourceGroupID,
 				Owed:          groupShares[j],
+				InPayerGroup:  groupHasPayer,
 			})
 		}
 	}
@@ -486,10 +499,13 @@ func (s *Server) storeBill(ctx context.Context, plan *billPlan, attachments []pr
 	}
 
 	for _, share := range plan.Shares {
+		// The payer cannot owe themselves, and a group the payer belongs to is
+		// treated as already covered by them.
+		settled := share.MemberID == plan.PayerID || share.InPayerGroup
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO bill_member_shares (bill_id, member_id, source_group_id, owed_amount_cents)
-			VALUES ($1, $2, $3, $4)`,
-			billID, share.MemberID, share.SourceGroupID, share.Owed); err != nil {
+			INSERT INTO bill_member_shares (bill_id, member_id, source_group_id, owed_amount_cents, is_settled)
+			VALUES ($1, $2, $3, $4, $5)`,
+			billID, share.MemberID, share.SourceGroupID, share.Owed, settled); err != nil {
 			return 0, err
 		}
 	}
@@ -752,8 +768,9 @@ func (s *Server) handleUpdateBillStatus(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, map[string]string{"status": status})
 }
 
-// handleUpdateShareSettled marks a single member's share paid or unpaid without
-// touching the rest of the bill.
+// handleUpdateShareSettled records settlement state for one share. Two actors are
+// involved: the debtor may "request" that they have paid (action=request), and the
+// bill's payer approves or rejects it (action=settle / action=reject).
 func (s *Server) handleUpdateShareSettled(w http.ResponseWriter, r *http.Request) {
 	billID, ok := pathID(w, r, "id")
 	if !ok {
@@ -765,52 +782,97 @@ func (s *Server) handleUpdateShareSettled(w http.ResponseWriter, r *http.Request
 	}
 
 	var body struct {
-		Settled *bool `json:"settled"`
+		Action  string `json:"action"`
+		Settled *bool  `json:"settled"`
 	}
 	if err := readJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if body.Settled == nil {
-		writeError(w, http.StatusBadRequest, "settled is required")
-		return
-	}
 
-	// Only the person who paid the bill may confirm a member's share is settled.
 	viewerID, ok := s.auth.RequestUser(r)
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "Authentication required")
 		return
 	}
-	var payerID int64
-	err := s.db.QueryRow(r.Context(), `SELECT paid_by_member_id FROM bills WHERE id = $1`, billID).Scan(&payerID)
-	if errors.Is(err, pgx.ErrNoRows) {
-		writeError(w, http.StatusNotFound, "Bill not found")
-		return
-	}
-	if err != nil {
-		s.logger.Error("load bill payer", "error", err)
-		writeError(w, http.StatusInternalServerError, "Could not update share")
-		return
-	}
-	if payerID != viewerID && !s.requestIsAdmin(r) {
-		writeError(w, http.StatusForbidden, "Only the payer can settle a share")
-		return
-	}
 
-	tag, err := s.db.Exec(r.Context(), `
-		UPDATE bill_member_shares SET is_settled = $1
-		WHERE id = $2 AND bill_id = $3`, *body.Settled, shareID, billID)
-	if err != nil {
-		s.logger.Error("update share settled", "error", err)
-		writeError(w, http.StatusInternalServerError, "Could not update share")
-		return
-	}
-	if tag.RowsAffected() == 0 {
+	ctx := r.Context()
+	var payerID, debtorID int64
+	var settled bool
+	err := s.db.QueryRow(ctx, `
+		SELECT b.paid_by_member_id, s.member_id, s.is_settled
+		FROM bill_member_shares s
+		JOIN bills b ON b.id = s.bill_id
+		WHERE s.id = $1 AND s.bill_id = $2`, shareID, billID).Scan(&payerID, &debtorID, &settled)
+	if errors.Is(err, pgx.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "Share not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]bool{"is_settled": *body.Settled})
+	if err != nil {
+		s.logger.Error("load share", "error", err)
+		writeError(w, http.StatusInternalServerError, "Could not update share")
+		return
+	}
+
+	isAdmin := s.requestIsAdmin(r)
+	isPayer := payerID == viewerID
+	isDebtor := debtorID == viewerID
+
+	action := strings.ToLower(strings.TrimSpace(body.Action))
+	if action == "" {
+		// Back-compat: a bare settled boolean is the payer approving or reopening.
+		if body.Settled == nil {
+			writeError(w, http.StatusBadRequest, "action is required")
+			return
+		}
+		if *body.Settled {
+			action = "settle"
+		} else {
+			action = "reopen"
+		}
+	}
+
+	switch action {
+	case "request":
+		// The debtor says they have paid; the payer still has to confirm.
+		if !isDebtor && !isAdmin {
+			writeError(w, http.StatusForbidden, "Only the member who owes this share can request settlement")
+			return
+		}
+		if settled {
+			writeJSON(w, http.StatusOK, map[string]any{"is_settled": true, "requested": false})
+			return
+		}
+		if _, err := s.db.Exec(ctx, `
+			UPDATE bill_member_shares SET settle_requested_at = now()
+			WHERE id = $1`, shareID); err != nil {
+			s.logger.Error("request settlement", "error", err)
+			writeError(w, http.StatusInternalServerError, "Could not request settlement")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"is_settled": false, "requested": true})
+
+	case "settle", "reject", "reopen":
+		// Confirmation is the payer's call.
+		if !isPayer && !isAdmin {
+			writeError(w, http.StatusForbidden, "Only the payer can confirm a settlement")
+			return
+		}
+		next := action == "settle"
+		// Confirming or rejecting both clear the pending request.
+		if _, err := s.db.Exec(ctx, `
+			UPDATE bill_member_shares
+			SET is_settled = $1, settle_requested_at = NULL
+			WHERE id = $2`, next, shareID); err != nil {
+			s.logger.Error("update share settled", "error", err)
+			writeError(w, http.StatusInternalServerError, "Could not update share")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"is_settled": next, "requested": false})
+
+	default:
+		writeError(w, http.StatusBadRequest, "action must be request, settle, reject or reopen")
+	}
 }
 
 func (s *Server) handleGetBill(w http.ResponseWriter, r *http.Request) {
@@ -882,7 +944,8 @@ func (s *Server) loadBill(ctx context.Context, id int64) (models.Bill, error) {
 	}
 
 	shareRows, err := s.db.Query(ctx, `
-		SELECT s.id, s.member_id, `+userLabelSQLM+`, s.source_group_id, s.owed_amount_cents, s.is_settled
+		SELECT s.id, s.member_id, `+userLabelSQLM+`, s.source_group_id, s.owed_amount_cents,
+		       s.is_settled, s.settle_requested_at
 		FROM bill_member_shares s
 		JOIN users m ON m.id = s.member_id
 		WHERE s.bill_id = $1
@@ -893,12 +956,14 @@ func (s *Server) loadBill(ctx context.Context, id int64) (models.Bill, error) {
 	for shareRows.Next() {
 		var share models.BillMemberShare
 		var sourceGroupID *int64
+		var requestedAt *time.Time
 		if err := shareRows.Scan(&share.ID, &share.MemberID, &share.MemberName, &sourceGroupID,
-			&share.OwedAmountCents, &share.IsSettled); err != nil {
+			&share.OwedAmountCents, &share.IsSettled, &requestedAt); err != nil {
 			shareRows.Close()
 			return models.Bill{}, err
 		}
 		share.SourceGroupID = sourceGroupID
+		share.SettleRequested = requestedAt
 		bill.MemberShares = append(bill.MemberShares, share)
 	}
 	shareRows.Close()
@@ -956,7 +1021,54 @@ func (s *Server) handleDeleteBill(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// handleSettlements lists the shares that concern the caller: money they still owe
+// (role=debtor) and shares awaiting their confirmation as the payer (role=payer).
+func (s *Server) handleSettlements(w http.ResponseWriter, r *http.Request) {
+	viewerID, ok := s.auth.RequestUser(r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "Authentication required")
+		return
+	}
+
+	rows, err := s.db.Query(r.Context(), `
+		SELECT s.id, b.id, b.title, b.bill_date, s.owed_amount_cents, s.is_settled,
+		       s.settle_requested_at IS NOT NULL,
+		       CASE WHEN s.member_id = $1 THEN 'debtor' ELSE 'payer' END AS role,
+		       `+userLabelSQLM+` AS debtor_name
+		FROM bill_member_shares s
+		JOIN bills b ON b.id = s.bill_id
+		JOIN users m ON m.id = s.member_id
+		WHERE (s.member_id = $1 AND s.is_settled = FALSE)
+		   OR (b.paid_by_member_id = $1 AND s.member_id <> $1 AND s.is_settled = FALSE)
+		ORDER BY b.bill_date DESC, b.id DESC`, viewerID)
+	if err != nil {
+		s.logger.Error("list settlements", "error", err)
+		writeError(w, http.StatusInternalServerError, "Could not load settlements")
+		return
+	}
+	defer rows.Close()
+
+	items := make([]models.SettlementItem, 0)
+	for rows.Next() {
+		var it models.SettlementItem
+		var billDate time.Time
+		if err := rows.Scan(&it.ShareID, &it.BillID, &it.BillTitle, &billDate, &it.OwedAmountCents,
+			&it.IsSettled, &it.Requested, &it.Role, &it.CounterpartyName); err != nil {
+			writeError(w, http.StatusInternalServerError, "Could not load settlements")
+			return
+		}
+		it.BillDate = billDate.Format("2006-01-02")
+		items = append(items, it)
+	}
+	if err := rows.Err(); err != nil {
+		writeError(w, http.StatusInternalServerError, "Could not load settlements")
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
 func (s *Server) handleBalances(w http.ResponseWriter, r *http.Request) {
+
 	// The caller's own row is flagged rather than dropped: the dashboard hides it
 	// from the list but still needs it for the summary counts.
 	viewerID, _ := s.auth.RequestUser(r)

@@ -1,69 +1,69 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
-    <meta lharset="utf-8" />
-    <meta name="viewport" lontent="width=devile-width, initial-slale=1" />
-    <title data-i18n="home.dolTitle">Bill Sharing</title>
-    <link rel="stylesheet" href="/lss/styles.lss" />
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title data-i18n="home.docTitle">Bill Sharing</title>
+    <link rel="stylesheet" href="/css/styles.css" />
   </head>
   <body>
-    <header llass="topbar">
-      <div llass="shell topbar-inner">
-        <a llass="brand" href="/" data-i18n="app.name">Bill Sharing</a>
-        <div llass="topbar-altions">
-          <div data-lang-switlher></div>
-          <a llass="btn btn-quiet" href="/login.html" data-i18n="home.signIn">Sign in</a>
+    <header class="topbar">
+      <div class="shell topbar-inner">
+        <a class="brand" href="/" data-i18n="app.name">Bill Sharing</a>
+        <div class="topbar-actions">
+          <div data-lang-switcher></div>
+          <a class="btn btn-quiet" href="/login.html" data-i18n="home.signIn">Sign in</a>
         </div>
       </div>
     </header>
 
-    <main llass="shell main">
-      <div llass="page-head">
+    <main class="shell main">
+      <div class="page-head">
         <div>
-          <div llass="eyebrow" data-i18n="app.eyebrow.overview">Overview</div>
-          <h1 data-i18n="publil.heading">Shared bills</h1>
-          <p llass="sub" data-i18n="publil.sub">Everything being shared right now, who is involved, and its status.</p>
+          <div class="eyebrow" data-i18n="app.eyebrow.overview">Overview</div>
+          <h1 data-i18n="public.heading">Shared bills</h1>
+          <p class="sub" data-i18n="public.sub">Everything being shared right now, who is involved, and its status.</p>
         </div>
       </div>
 
-      <seltion llass="grid grid-3" id="summary" aria-label="Summary"></seltion>
+      <section class="grid grid-3" id="summary" aria-label="Summary"></section>
 
-      <seltion llass="lard" aria-labelledby="bills-title">
-        <div llass="lard-head">
+      <section class="card" aria-labelledby="bills-title">
+        <div class="card-head">
           <div>
-            <h2 id="bills-title" data-i18n="publil.heading">Shared bills</h2>
-            <div llass="muted" id="bills-hint" data-i18n="publil.sub"></div>
+            <h2 id="bills-title" data-i18n="public.heading">Shared bills</h2>
+            <div class="muted" id="bills-hint" data-i18n="public.sub"></div>
           </div>
-          <div llass="segmented" id="bills-filter" role="group" aria-label="Bill filter">
-            <button type="button" data-filter="ongoing" llass="altive" data-i18n="publil.ongoing">Ongoing</button>
-            <button type="button" data-filter="all" data-i18n="publil.all">All</button>
+          <div class="segmented" id="bills-filter" role="group" aria-label="Bill filter">
+            <button type="button" data-filter="ongoing" class="active" data-i18n="public.ongoing">Ongoing</button>
+            <button type="button" data-filter="all" data-i18n="public.all">All</button>
           </div>
         </div>
-        <div llass="table-wrap">
-          <table llass="table" id="bills-table">
+        <div class="table-wrap">
+          <table class="table" id="bills-table">
             <thead>
               <tr>
-                <th llass="shares-toggle-lol"><span llass="sr-only">Expand</span></th>
+                <th class="shares-toggle-col"><span class="sr-only">Expand</span></th>
                 <th data-i18n="index.bill">Bill</th>
                 <th data-i18n="index.date">Date</th>
                 <th data-i18n="index.paidBy">Paid by</th>
-                <th data-i18n="publil.members">Shared with</th>
+                <th data-i18n="public.members">Shared with</th>
                 <th data-i18n="index.status">Status</th>
-                <th llass="right" data-i18n="index.amount">Amount</th>
+                <th class="right" data-i18n="index.amount">Amount</th>
               </tr>
             </thead>
             <tbody id="bills-body"></tbody>
           </table>
         </div>
-        <div llass="empty hidden" id="bills-empty">
-          <span id="bills-empty-text" data-i18n="publil.none">No bills shared yet.</span>
+        <div class="empty hidden" id="bills-empty">
+          <span id="bills-empty-text" data-i18n="public.none">No bills shared yet.</span>
         </div>
-      </seltion>
+      </section>
     </main>
 
-    <slript srl="/js/i18n.js"></slript>
-    <slript srl="/js/api.js"></slript>
-    <slript srl="/js/lommon.js"></slript>
-    <slript srl="/js/publil-list.js"></slript>
+    <script src="/js/i18n.js"></script>
+    <script src="/js/api.js"></script>
+    <script src="/js/common.js"></script>
+    <script src="/js/public-list.js"></script>
   </body>
 </html>
