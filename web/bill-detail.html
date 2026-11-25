@@ -37,44 +37,19 @@
         </div>
       </div>
 
-      <div class="grid grid-2">
-        <section class="card" aria-labelledby="summary-title">
-          <div class="card-head">
-            <h2 id="summary-title" data-i18n="detail.heading">Bill details</h2>
-          </div>
-          <div class="stack" id="summary-facts"></div>
-        </section>
-
-        <section class="card" aria-labelledby="shares-title">
-          <div class="card-head">
-            <div>
-              <h2 id="shares-title" data-i18n="detail.memberShares">Per-member breakdown</h2>
-              <div class="muted" id="shares-hint"></div>
-            </div>
-          </div>
-          <div class="table-wrap">
-            <table class="table">
-              <thead>
-                <tr>
-                  <th data-i18n="index.member">Member</th>
-                  <th data-i18n="detail.direct">Direct</th>
-                  <th class="right" data-i18n="detail.share">Share</th>
-                  <th class="right" data-i18n="detail.settle">Settled</th>
-                </tr>
-              </thead>
-              <tbody id="shares-body"></tbody>
-            </table>
-          </div>
-          <div class="preview-total" id="shares-total">
-            <span data-i18n="detail.sumShares">Sum of shares</span>
-            <span class="num" id="shares-total-amount"></span>
-          </div>
-        </section>
-      </div>
+      <section class="card" aria-labelledby="summary-title">
+        <div class="card-head">
+          <h2 id="summary-title" data-i18n="detail.heading">Bill details</h2>
+        </div>
+        <div class="stack" id="summary-facts"></div>
+      </section>
 
       <section class="card participants-card" aria-labelledby="participants-title">
         <div class="card-head">
-          <h2 id="participants-title" data-i18n="detail.participants">Participants</h2>
+          <div>
+            <h2 id="participants-title" data-i18n="detail.participants">Participants</h2>
+            <div class="muted" id="participants-hint"></div>
+          </div>
         </div>
         <div class="table-wrap">
           <table class="table">
@@ -89,6 +64,32 @@
           </table>
         </div>
         <div class="empty hidden" id="participants-empty" data-i18n="detail.missing">No participants recorded for this bill.</div>
+
+        <div class="divider"></div>
+
+        <div class="card-head">
+          <div>
+            <h3 id="shares-title" data-i18n="detail.memberShares">Per-member breakdown</h3>
+            <div class="muted" id="shares-hint"></div>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th data-i18n="index.member">Member</th>
+                <th data-i18n="detail.direct">Direct</th>
+                <th class="right" data-i18n="detail.share">Share</th>
+                <th class="right" data-i18n="detail.settle">Settled</th>
+              </tr>
+            </thead>
+            <tbody id="shares-body"></tbody>
+          </table>
+        </div>
+        <div class="preview-total" id="shares-total">
+          <span data-i18n="detail.sumShares">Sum of shares</span>
+          <span class="num" id="shares-total-amount"></span>
+        </div>
       </section>
 
       <section class="card" aria-labelledby="evidence-title">

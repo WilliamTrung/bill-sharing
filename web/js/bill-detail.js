@@ -9,6 +9,7 @@
   const sharesTotalAmount = document.getElementById("shares-total-amount");
   const participantsBody = document.getElementById("participants-body");
   const participantsEmpty = document.getElementById("participants-empty");
+  const participantsHint = document.getElementById("participants-hint");
   const gallery = document.getElementById("gallery");
   const evidenceEmpty = document.getElementById("evidence-empty");
   const evidenceHint = document.getElementById("evidence-hint");
@@ -95,9 +96,13 @@
 
     if (!bill.participants || bill.participants.length === 0) {
       participantsEmpty.classList.remove("hidden");
+      participantsHint.textContent = "";
       return;
     }
     participantsEmpty.classList.add("hidden");
+    participantsHint.textContent = `${bill.participants.length} ${I18n.t(
+      bill.participants.length === 1 ? "unit.participant" : "unit.participants"
+    )}`;
 
     for (const participant of bill.participants) {
       const row = document.createElement("tr");
