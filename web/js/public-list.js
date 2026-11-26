@@ -1,13 +1,22 @@
 (() => {
+  // The slug comes from the URL (/share/<slug>) and scopes everything on this
+  // page. It is the only credential an anonymous visitor has.
+  const slug = window.location.pathname.split("/").filter(Boolean).pop() || "";
+
   const summary = document.getElementById("summary");
   const billsBody = document.getElementById("bills-body");
   const billsEmpty = document.getElementById("bills-empty");
   const billsEmptyText = document.getElementById("bills-empty-text");
   const billsHint = document.getElementById("bills-hint");
   const filter = document.getElementById("bills-filter");
+  const heading = document.getElementById("project-name");
+  const membersLine = document.getElementById("project-members");
 
-  const cache = { bills: [] };
+  const cache = { bills: [], project: null };
   const state = { filter: "ongoing" };
+
+  // Shares.mount wants a loader taking one id, so bind the slug.
+  const loadBill = (id) => API.publicBill(slug, id);
 
   function unit(key, singularKey, count) {
     return I18n.t(count === 1 ? singularKey : key);
@@ -78,21 +87,15 @@
     for (const bill of bills) {
       const row = document.createElement("tr");
       row.className = "bill-row";
-      row.dataset.href = `/bill-detail.html?id=${bill.id}`;
-      row.tabIndex = 0;
-      row.setAttribute("role", "link");
+      // No detail page for anonymous visitors: the row is not a link.
+      row.tabIndex = -1;
 
       const toggleCell = document.createElement("td");
-      // Stop the row click from navigating when the shares toggle is used.
       toggleCell.addEventListener("click", (event) => event.stopPropagation());
       row.appendChild(toggleCell);
 
       const titleCell = document.createElement("td");
-      const link = document.createElement("a");
-      link.href = `/bill-detail.html?id=${bill.id}`;
-      link.className = "strong";
-      link.textContent = bill.title;
-      titleCell.appendChild(link);
+      titleCell.appendChild(UI.el("span", "strong", bill.title));
       if (bill.description) titleCell.appendChild(UI.el("div", "small faint", bill.description));
       row.appendChild(titleCell);
 
@@ -119,9 +122,8 @@
       row.appendChild(UI.el("td", "right num strong", Money.format(bill.total_amount_cents)));
 
       billsBody.appendChild(row);
-      Shares.mount(toggleCell, row, 7, bill.id, API.publicBill);
+      Shares.mount(toggleCell, row, 7, bill.id, loadBill);
     }
-    Rows.apply(billsBody);
   }
 
   function renderFilters() {
@@ -135,7 +137,17 @@
     billsHint.textContent = `${shown} ${unit("unit.bills", "unit.bill", shown)}`;
   }
 
+  function renderProject() {
+    if (cache.project) {
+      heading.textContent = cache.project.name;
+      document.title = `${cache.project.name} · Bill Sharing`;
+      const names = cache.project.members || [];
+      membersLine.textContent = names.length ? names.join(" · ") : "";
+    }
+  }
+
   function renderAll() {
+    renderProject();
     renderSummary();
     renderFilters();
     renderBills();
@@ -153,8 +165,23 @@
 
   Chrome.start({
     async onReady() {
-      cache.bills = await API.publicBills();
+      // A wrong or disabled slug yields 404; show that rather than an empty page.
+      try {
+        cache.project = await API.publicProject(slug);
+      } catch (err) {
+        if (err && err.status === 404) {
+          document.getElementById("share-body").classList.add("hidden");
+          document.getElementById("share-missing").classList.remove("hidden");
+          return;
+        }
+        throw err;
+      }
+      cache.bills = await API.publicBills(slug);
       renderAll();
+    },
+    onError() {
+      document.getElementById("share-body").classList.add("hidden");
+      document.getElementById("share-missing").classList.remove("hidden");
     },
   });
 })();

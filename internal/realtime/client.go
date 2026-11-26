@@ -11,22 +11,26 @@ import (
 // timeouts. CloseRead sends pongs automatically; we only need to send pings.
 const pingInterval = 30 * time.Second
 
-// Client is one open WebSocket connection belonging to a signed-in user.
+// Client is one open WebSocket connection belonging to a signed-in user, opened
+// under one project. The project is what the connection may receive: a user with
+// tabs on different projects gets each event only on the matching tab.
 type Client struct {
-	userID int64
-	conn   *websocket.Conn
+	userID    int64
+	projectID int64
+	conn      *websocket.Conn
 
 	// send buffers outgoing frames. Only the write pump reads it, so there is a
 	// single writer per connection as the library requires.
 	send chan []byte
 }
 
-// NewClient wires a freshly accepted connection to a user.
-func NewClient(userID int64, conn *websocket.Conn) *Client {
+// NewClient wires a freshly accepted connection to a user and project.
+func NewClient(userID, projectID int64, conn *websocket.Conn) *Client {
 	return &Client{
-		userID: userID,
-		conn:   conn,
-		send:   make(chan []byte, sendBuffer),
+		userID:    userID,
+		projectID: projectID,
+		conn:      conn,
+		send:      make(chan []byte, sendBuffer),
 	}
 }
 

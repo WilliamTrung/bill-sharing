@@ -25,11 +25,13 @@ type groupInput struct {
 }
 
 func (s *Server) handleListGroups(w http.ResponseWriter, r *http.Request) {
+	pc, _ := projectFrom(r.Context())
 	ctx := r.Context()
 	rows, err := s.db.Query(ctx, `
 		SELECT id, name, internal_split_type, is_active, leader_user_id, created_at, updated_at
 		FROM member_groups
-		ORDER BY is_active DESC, name ASC`)
+		WHERE project_id = $1
+		ORDER BY is_active DESC, name ASC`, pc.ProjectID)
 	if err != nil {
 		s.logger.Error("list groups", "error", err)
 		writeError(w, http.StatusInternalServerError, "Could not load groups")
@@ -56,8 +58,9 @@ func (s *Server) handleListGroups(w http.ResponseWriter, r *http.Request) {
 	memberRows, err := s.db.Query(ctx, `
 		SELECT gm.group_id, gm.member_id, `+userLabelSQLM+`, gm.internal_ratio
 		FROM group_members gm
+		JOIN member_groups g ON g.id = gm.group_id AND g.project_id = $1
 		JOIN users m ON m.id = gm.member_id
-		ORDER BY `+userLabelSQLM+` ASC`)
+		ORDER BY `+userLabelSQLM+` ASC`, pc.ProjectID)
 	if err != nil {
 		s.logger.Error("list group members", "error", err)
 		writeError(w, http.StatusInternalServerError, "Could not load groups")
@@ -85,6 +88,8 @@ func (s *Server) handleListGroups(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCreateGroup(w http.ResponseWriter, r *http.Request) {
+	pc, _ := projectFrom(r.Context())
+
 	var in groupInput
 	if err := readJSON(w, r, &in); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -96,25 +101,18 @@ func (s *Server) handleCreateGroup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	members, err := s.validateGroupMembers(r.Context(), in.Members, splitType)
+	members, err := s.validateGroupMembers(r.Context(), pc.ProjectID, in.Members, splitType)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	// Non-admins may only create a group they are part of, and they lead it so
-	// they can edit it later; admins create groups on anyone's behalf.
+	// Within a project every member is equal, so a group may be created on
+	// anyone's behalf. The creator leads it when they are in it, which is what
+	// lets them keep editing it.
 	var leaderUserID *int64
-	if !s.requestIsAdmin(r) {
-		userID, ok := s.auth.RequestUser(r)
-		if !ok {
-			writeError(w, http.StatusUnauthorized, "Authentication required")
-			return
-		}
-		if !containsMember(members, userID) {
-			writeError(w, http.StatusForbidden, "A group must include you")
-			return
-		}
+	userID := pc.UserID
+	if containsMember(members, userID) {
 		leaderUserID = &userID
 	}
 
@@ -133,9 +131,9 @@ func (s *Server) handleCreateGroup(w http.ResponseWriter, r *http.Request) {
 
 	var groupID int64
 	if err := tx.QueryRow(ctx, `
-		INSERT INTO member_groups (name, internal_split_type, is_active, leader_user_id)
-		VALUES ($1, $2, $3, $4) RETURNING id`,
-		name, splitType, active, leaderUserID,
+		INSERT INTO member_groups (project_id, name, internal_split_type, is_active, leader_user_id)
+		VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+		pc.ProjectID, name, splitType, active, leaderUserID,
 	).Scan(&groupID); err != nil {
 		s.logger.Error("create group", "error", err)
 		writeError(w, http.StatusInternalServerError, "Could not create group")
@@ -157,24 +155,25 @@ func (s *Server) handleCreateGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	group, err := s.loadGroup(ctx, groupID)
+	group, err := s.loadGroup(ctx, pc.ProjectID, groupID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Could not load group")
 		return
 	}
 
 	// Every member should learn they were added and refresh their participant list.
-	s.notifyGroupMembers(ctx, group, realtime.TypeGroupCreated)
+	s.notifyGroupMembers(ctx, pc.ProjectID, group, realtime.TypeGroupCreated)
 
 	writeJSON(w, http.StatusCreated, group)
 }
 
 func (s *Server) handleGetGroup(w http.ResponseWriter, r *http.Request) {
+	pc, _ := projectFrom(r.Context())
 	id, ok := pathID(w, r, "id")
 	if !ok {
 		return
 	}
-	group, err := s.loadGroup(r.Context(), id)
+	group, err := s.loadGroup(r.Context(), pc.ProjectID, id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "Group not found")
 		return
@@ -188,6 +187,7 @@ func (s *Server) handleGetGroup(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUpdateGroup(w http.ResponseWriter, r *http.Request) {
+	pc, _ := projectFrom(r.Context())
 	id, ok := pathID(w, r, "id")
 	if !ok {
 		return
@@ -211,7 +211,7 @@ func (s *Server) handleUpdateGroup(w http.ResponseWriter, r *http.Request) {
 	var leaderUserID *int64
 	if err := tx.QueryRow(ctx, `
 		SELECT id, name, internal_split_type, is_active, leader_user_id
-		FROM member_groups WHERE id = $1 FOR UPDATE`, id,
+		FROM member_groups WHERE id = $1 AND project_id = $2 FOR UPDATE`, id, pc.ProjectID,
 	).Scan(&current.ID, &current.Name, &current.InternalSplitType, &current.IsActive, &leaderUserID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "Group not found")
@@ -221,19 +221,11 @@ func (s *Server) handleUpdateGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !s.canManageGroup(r, leaderUserID) {
-		writeError(w, http.StatusForbidden, "Only an admin or the group leader can edit this group")
+	// Inside a project any member may reshape a group; the leader field only
+	// decides who can edit it when set, and a global admin always can.
+	if !pc.IsAdmin && leaderUserID != nil && !userLeadsGroup(pc.UserID, leaderUserID) {
+		writeError(w, http.StatusForbidden, "Only the group leader can edit this group")
 		return
-	}
-
-	// A non-admin may reshape the group, but only while they stay in it, so they
-	// never lock themselves out of the group they lead.
-	if !s.requestIsAdmin(r) {
-		userID, _ := s.auth.RequestUser(r)
-		if in.Members != nil && !containsMember(in.Members, userID) {
-			writeError(w, http.StatusForbidden, "A group must include you")
-			return
-		}
 	}
 
 	name := current.Name
@@ -256,14 +248,14 @@ func (s *Server) handleUpdateGroup(w http.ResponseWriter, r *http.Request) {
 	if _, err := tx.Exec(ctx, `
 		UPDATE member_groups
 		SET name = $1, internal_split_type = $2, is_active = $3, updated_at = now()
-		WHERE id = $4`, name, splitType, active, id); err != nil {
+		WHERE id = $4 AND project_id = $5`, name, splitType, active, id, pc.ProjectID); err != nil {
 		s.logger.Error("update group", "error", err)
 		writeError(w, http.StatusInternalServerError, "Could not update group")
 		return
 	}
 
 	if in.Members != nil {
-		members, err := s.validateGroupMembers(ctx, in.Members, splitType)
+		members, err := s.validateGroupMembers(ctx, pc.ProjectID, in.Members, splitType)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
@@ -288,22 +280,22 @@ func (s *Server) handleUpdateGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	group, err := s.loadGroup(ctx, id)
+	group, err := s.loadGroup(ctx, pc.ProjectID, id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Could not load group")
 		return
 	}
 
-	s.notifyGroupMembers(ctx, group, realtime.TypeGroupUpdated)
+	s.notifyGroupMembers(ctx, pc.ProjectID, group, realtime.TypeGroupUpdated)
 
 	writeJSON(w, http.StatusOK, group)
 }
 
-func (s *Server) loadGroup(ctx context.Context, id int64) (models.Group, error) {
+func (s *Server) loadGroup(ctx context.Context, projectID, id int64) (models.Group, error) {
 	var g models.Group
 	if err := s.db.QueryRow(ctx, `
 		SELECT id, name, internal_split_type, is_active, leader_user_id, created_at, updated_at
-		FROM member_groups WHERE id = $1`, id,
+		FROM member_groups WHERE id = $1 AND project_id = $2`, id, projectID,
 	).Scan(&g.ID, &g.Name, &g.InternalSplitType, &g.IsActive, &g.LeaderUserID, &g.CreatedAt, &g.UpdatedAt); err != nil {
 		return models.Group{}, err
 	}
@@ -357,7 +349,7 @@ func validateGroupFields(name, splitType string) (string, string, error) {
 	return name, splitType, nil
 }
 
-func (s *Server) validateGroupMembers(ctx context.Context, inputs []groupMemberInput, splitType string) ([]groupMemberInput, error) {
+func (s *Server) validateGroupMembers(ctx context.Context, projectID int64, inputs []groupMemberInput, splitType string) ([]groupMemberInput, error) {
 	if len(inputs) < 2 {
 		return nil, errors.New("A group needs at least two members")
 	}
@@ -374,7 +366,13 @@ func (s *Server) validateGroupMembers(ctx context.Context, inputs []groupMemberI
 		ids = append(ids, member.MemberID)
 	}
 
-	rows, err := s.db.Query(ctx, `SELECT id, `+userLabelSQL+` AS name, is_active FROM users WHERE id = ANY($1)`, ids)
+	// The project join is what stops a caller from pulling another tenant's
+	// users into a group; an unknown id falls through to "does not exist".
+	rows, err := s.db.Query(ctx, `
+		SELECT u.id, `+userLabelSQL+` AS name, u.is_active
+		FROM users u
+		JOIN project_members pm ON pm.user_id = u.id AND pm.project_id = $2
+		WHERE u.id = ANY($1)`, ids, projectID)
 	if err != nil {
 		return nil, err
 	}

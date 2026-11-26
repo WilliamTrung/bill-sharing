@@ -1,4 +1,5 @@
 (() => {
+  const projectId = Chrome.currentProjectID();
   const summary = document.getElementById("summary");
   const balancesBody = document.getElementById("balances-body");
   const balancesEmpty = document.getElementById("balances-empty");
@@ -6,6 +7,9 @@
   const billsEmpty = document.getElementById("bills-empty");
 
   const cache = { bills: [], balances: [], settlements: [] };
+
+  // Shares.mount takes a loader with a single id argument, so bind the project.
+  const loadBill = (id) => API.getBill(projectId, id);
 
   function unit(key, singularKey, count) {
     return I18n.t(count === 1 ? singularKey : key);
@@ -96,7 +100,7 @@
     for (const bill of bills) {
       const row = document.createElement("tr");
       row.className = "bill-row";
-      row.dataset.href = `/bill-detail.html?id=${bill.id}`;
+      row.dataset.href = `/p/${projectId}/bill-detail.html?id=${bill.id}`;
       row.tabIndex = 0;
       row.setAttribute("role", "link");
 
@@ -107,7 +111,7 @@
 
       const titleCell = document.createElement("td");
       const link = document.createElement("a");
-      link.href = `/bill-detail.html?id=${bill.id}`;
+      link.href = `/p/${projectId}/bill-detail.html?id=${bill.id}`;
       link.className = "strong";
       link.textContent = bill.title;
       titleCell.appendChild(link);
@@ -145,7 +149,7 @@
       row.appendChild(UI.el("td", "right num strong", Money.format(bill.total_amount_cents)));
 
       billsBody.appendChild(row);
-      Shares.mount(toggleCell, row, 7, bill.id, API.getBill, bill.shares);
+      Shares.mount(toggleCell, row, 7, bill.id, loadBill, bill.shares);
     }
     Rows.apply(billsBody);
   }
@@ -172,10 +176,10 @@
       if (!ok) return;
     }
     try {
-      await API.updateShareSettled(item.bill_id, item.share_id, action);
+      await API.updateShareSettled(projectId, item.bill_id, item.share_id, action);
       UI.toast(I18n.t("index.settleUpdated"), "success");
       // Re-read both lists: settling can complete the bill and change its status.
-      const [bills, settlements] = await Promise.all([API.listBills(), API.settlements()]);
+      const [bills, settlements] = await Promise.all([API.listBills(projectId), API.settlements(projectId)]);
       cache.bills = bills;
       cache.settlements = settlements;
       renderAll();
@@ -194,7 +198,7 @@
 
     for (const item of items) {
       const row = document.createElement("tr");
-      row.dataset.href = `/bill-detail.html?id=${item.bill_id}`;
+      row.dataset.href = `/p/${projectId}/bill-detail.html?id=${item.bill_id}`;
 
       const toggleCell = document.createElement("td");
       toggleCell.addEventListener("click", (event) => event.stopPropagation());
@@ -244,7 +248,7 @@
       row.appendChild(actionCell);
       settleBody.appendChild(row);
       // Mount after insertion: the dropdown row is inserted next to this one.
-      Shares.mount(toggleCell, row, 6, item.bill_id, API.getBill, item.shares);
+      Shares.mount(toggleCell, row, 6, item.bill_id, loadBill, item.shares);
     }
     Rows.apply(settleBody);
   }
@@ -264,9 +268,9 @@
   const refresh = UI.debounce(async () => {
     try {
       const [bills, balances, settlements] = await Promise.all([
-        API.listBills(),
-        API.balances(),
-        API.settlements(),
+        API.listBills(projectId),
+        API.balances(projectId),
+        API.settlements(projectId),
       ]);
       cache.bills = bills;
       cache.balances = balances;
@@ -288,9 +292,9 @@
   Chrome.start({
     async onReady() {
       const [bills, balances, settlements] = await Promise.all([
-        API.listBills(),
-        API.balances(),
-        API.settlements(),
+        API.listBills(projectId),
+        API.balances(projectId),
+        API.settlements(projectId),
       ]);
       cache.bills = bills;
       cache.balances = balances;

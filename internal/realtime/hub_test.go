@@ -13,7 +13,16 @@ func testHub() *Hub {
 }
 
 func testClient(h *Hub, userID int64) *Client {
-	c := &Client{userID: userID, send: make(chan []byte, sendBuffer)}
+	// Project 1 by default; NewEvent's events carry no project id, so they reach
+	// every connection regardless.
+	c := &Client{userID: userID, projectID: 1, send: make(chan []byte, sendBuffer)}
+	h.add(c)
+	return c
+}
+
+// projectClient is a connection opened under a specific project.
+func projectClient(h *Hub, userID, projectID int64) *Client {
+	c := &Client{userID: userID, projectID: projectID, send: make(chan []byte, sendBuffer)}
 	h.add(c)
 	return c
 }
@@ -111,6 +120,41 @@ func TestRemoveDropsUser(t *testing.T) {
 	h.Broadcast([]int64{8}, NewEvent(TypeBillCreated, &BillEvent{BillID: 1}, nil))
 	if _, ok := drain(c); ok {
 		t.Fatal("removed client still received an event")
+	}
+}
+
+// A user with tabs on two projects must only receive each event on the tab that
+// is showing that project. This is the tenant boundary at the socket layer.
+func TestBroadcastIsScopedToConnectionProject(t *testing.T) {
+	h := testHub()
+	alpha := projectClient(h, 1, 10)
+	beta := projectClient(h, 1, 20)
+
+	ev := NewEvent(TypeBillCreated, &BillEvent{BillID: 5, Title: "Alpha"}, nil)
+	ev.ProjectID = 10
+	h.Broadcast([]int64{1}, ev)
+
+	if got, ok := drain(alpha); !ok || got.ProjectID != 10 {
+		t.Fatalf("Alpha tab got %+v (ok=%v)", got, ok)
+	}
+	if got, ok := drain(beta); ok {
+		t.Fatalf("Beta tab received a project-10 event: %+v", got)
+	}
+}
+
+// An event with no project id is a socket-level signal and reaches every tab.
+func TestBroadcastWithoutProjectReachesAllTabs(t *testing.T) {
+	h := testHub()
+	a := projectClient(h, 3, 10)
+	b := projectClient(h, 3, 20)
+
+	h.Broadcast([]int64{3}, NewEvent(TypeBillUpdated, &BillEvent{BillID: 1}, nil))
+
+	if _, ok := drain(a); !ok {
+		t.Fatal("first tab missed the unscoped event")
+	}
+	if _, ok := drain(b); !ok {
+		t.Fatal("second tab missed the unscoped event")
 	}
 }
 

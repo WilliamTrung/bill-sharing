@@ -1,12 +1,14 @@
 package handlers
 
 import (
+	"fmt"
 	"io/fs"
 	"log/slog"
 	"mime"
 	"net/http"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -32,9 +34,9 @@ type Server struct {
 
 func New(cfg config.Config, db *pgxpool.Pool, logger *slog.Logger, webFS fs.FS) *Server {
 	s := &Server{
-		cfg:     cfg,
-		db:      db,
-		auth:    auth.New(cfg.SessionSecret, cfg.SessionTTL),
+		cfg:  cfg,
+		db:   db,
+		auth: auth.New(cfg.SessionSecret, cfg.SessionTTL),
 		mailer: mail.Gmail{
 			Host: cfg.SMTPHost,
 			Port: cfg.SMTPPort,
@@ -63,48 +65,73 @@ func (s *Server) routes() {
 	// Public: readable without a session.
 	s.mux.HandleFunc("POST /api/login", s.handleLogin)
 	s.mux.HandleFunc("GET /api/config", s.handleConfig)
-	s.mux.HandleFunc("GET /api/public/bills", s.handlePublicListBills)
-	s.mux.HandleFunc("GET /api/public/bills/{id}", s.handlePublicGetBill)
 	s.mux.HandleFunc("GET /api/public/invite", s.handlePublicInvite)
 	s.mux.HandleFunc("POST /api/public/invite/accept", s.handleAcceptInvite)
-	s.mux.HandleFunc("GET /uploads/{billID}/{filename}", s.handleUploadedFile)
 
-	// Authenticated: everything that mutates data or exposes member contact info.
+	// Public, but scoped to one project by its unguessable share slug. A project
+	// that has not enabled sharing resolves to nothing, so these cannot be used
+	// to enumerate other tenants.
+	s.mux.HandleFunc("GET /api/public/p/{slug}", s.handlePublicProject)
+	s.mux.HandleFunc("GET /api/public/p/{slug}/bills", s.handlePublicListBills)
+	s.mux.HandleFunc("GET /api/public/p/{slug}/bills/{id}", s.handlePublicGetBill)
+
+	// Attachments need a session and project membership: see handleUploadedFile.
+	s.mux.Handle("GET /uploads/{billID}/{filename}", s.requireAuth(http.HandlerFunc(s.handleUploadedFile)))
+
+	// Account-level routes. These are about the person, not a project.
 	s.mux.Handle("POST /api/logout", s.requireAuth(http.HandlerFunc(s.handleLogout)))
 	s.mux.Handle("GET /api/session", s.requireAuth(http.HandlerFunc(s.handleSession)))
-
 	s.mux.Handle("GET /api/profile", s.requireAuth(http.HandlerFunc(s.handleProfile)))
 	s.mux.Handle("PUT /api/profile", s.requireAuth(http.HandlerFunc(s.handleUpdateProfile)))
 	s.mux.Handle("PUT /api/profile/password", s.requireAuth(http.HandlerFunc(s.handleChangePassword)))
 
-	// Member management is admin-only; plain reads stay available so the bill form
-	// can still list people to split with.
-	s.mux.Handle("POST /api/members", s.requireAdmin(http.HandlerFunc(s.handleCreateMember)))
-	s.mux.Handle("PUT /api/members/{id}", s.requireAdmin(http.HandlerFunc(s.handleUpdateMember)))
-	s.mux.Handle("POST /api/members/{id}/invite", s.requireAdmin(http.HandlerFunc(s.handleSendInvite)))
-	s.mux.Handle("GET /api/members", s.requireAuth(http.HandlerFunc(s.handleListMembers)))
-	s.mux.Handle("GET /api/members/{id}", s.requireAuth(http.HandlerFunc(s.handleGetMember)))
+	// The project collection: which projects exist for me, and creating one.
+	s.mux.Handle("GET /api/projects", s.requireAuth(http.HandlerFunc(s.handleListProjects)))
+	s.mux.Handle("POST /api/projects", s.requireAuth(http.HandlerFunc(s.handleCreateProject)))
 
-	// Groups may be created and edited by admins and by the member who leads
-	// them; the handlers enforce who may touch which group.
-	s.mux.Handle("POST /api/groups", s.requireAuth(http.HandlerFunc(s.handleCreateGroup)))
-	s.mux.Handle("PUT /api/groups/{id}", s.requireAuth(http.HandlerFunc(s.handleUpdateGroup)))
-	s.mux.Handle("GET /api/groups", s.requireAuth(http.HandlerFunc(s.handleListGroups)))
-	s.mux.Handle("GET /api/groups/{id}", s.requireAuth(http.HandlerFunc(s.handleGetGroup)))
+	// Everything below is scoped to a project. requireProject resolves the
+	// caller's membership from the path and rejects non-members with 404.
+	scoped := func(pattern string, h http.HandlerFunc) {
+		s.mux.Handle(pattern, s.requireProject(h))
+	}
+	managed := func(pattern string, h http.HandlerFunc) {
+		s.mux.Handle(pattern, s.requireProjectManager(h))
+	}
 
-	s.mux.Handle("GET /api/bills", s.requireAuth(http.HandlerFunc(s.handleListBills)))
-	s.mux.Handle("POST /api/bills", s.requireAuth(http.HandlerFunc(s.handleCreateBill)))
-	s.mux.Handle("GET /api/bills/{id}", s.requireAuth(http.HandlerFunc(s.handleGetBill)))
-	s.mux.Handle("PUT /api/bills/{id}/status", s.requireAuth(http.HandlerFunc(s.handleUpdateBillStatus)))
-	s.mux.Handle("PUT /api/bills/{id}/shares/{shareID}/settled", s.requireAuth(http.HandlerFunc(s.handleUpdateShareSettled)))
-	s.mux.Handle("DELETE /api/bills/{id}", s.requireAuth(http.HandlerFunc(s.handleDeleteBill)))
+	scoped("GET /api/p/{projectID}", s.handleGetProject)
+	managed("PUT /api/p/{projectID}", s.handleUpdateProject)
+	managed("DELETE /api/p/{projectID}", s.handleDeleteProject)
 
-	s.mux.Handle("GET /api/balances", s.requireAuth(http.HandlerFunc(s.handleBalances)))
-	s.mux.Handle("GET /api/settlements", s.requireAuth(http.HandlerFunc(s.handleSettlements)))
+	// Any member may add people; only the owner may remove them.
+	scoped("GET /api/p/{projectID}/members", s.handleListProjectMembers)
+	scoped("POST /api/p/{projectID}/members", s.handleAddProjectMember)
+	managed("DELETE /api/p/{projectID}/members/{userID}", s.handleRemoveProjectMember)
+	scoped("POST /api/p/{projectID}/members/{userID}/invite", s.handleSendInvite)
 
-	// Realtime event stream. The upgrade is gated by the same session cookie as
-	// the rest of the API.
-	s.mux.Handle("GET /api/ws", s.requireAuth(http.HandlerFunc(s.handleWebSocket)))
+	// Member records (name, phone, email, notes) inside the project.
+	scoped("GET /api/p/{projectID}/people", s.handleListMembers)
+	scoped("POST /api/p/{projectID}/people", s.handleCreateMember)
+	scoped("GET /api/p/{projectID}/people/{id}", s.handleGetMember)
+	scoped("PUT /api/p/{projectID}/people/{id}", s.handleUpdateMember)
+
+	scoped("GET /api/p/{projectID}/groups", s.handleListGroups)
+	scoped("POST /api/p/{projectID}/groups", s.handleCreateGroup)
+	scoped("GET /api/p/{projectID}/groups/{id}", s.handleGetGroup)
+	scoped("PUT /api/p/{projectID}/groups/{id}", s.handleUpdateGroup)
+
+	scoped("GET /api/p/{projectID}/bills", s.handleListBills)
+	scoped("POST /api/p/{projectID}/bills", s.handleCreateBill)
+	scoped("GET /api/p/{projectID}/bills/{id}", s.handleGetBill)
+	scoped("PUT /api/p/{projectID}/bills/{id}/status", s.handleUpdateBillStatus)
+	scoped("PUT /api/p/{projectID}/bills/{id}/shares/{shareID}/settled", s.handleUpdateShareSettled)
+	scoped("DELETE /api/p/{projectID}/bills/{id}", s.handleDeleteBill)
+
+	scoped("GET /api/p/{projectID}/balances", s.handleBalances)
+	scoped("GET /api/p/{projectID}/settlements", s.handleSettlements)
+
+	// Realtime event stream, established under an explicit project so a tab knows
+	// which project's events it is listening for.
+	scoped("GET /api/p/{projectID}/ws", s.handleWebSocket)
 
 	s.mux.HandleFunc("GET /", s.handleStatic)
 }
@@ -117,19 +144,6 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
-}
-
-// requireAdmin allows only signed-in users whose email is listed in ADMIN_EMAILS.
-// The account is re-read from the database on every call, so a revoked admin
-// loses access immediately instead of when their cookie expires.
-func (s *Server) requireAdmin(next http.Handler) http.Handler {
-	return s.requireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !s.requestIsAdmin(r) {
-			writeError(w, http.StatusForbidden, "Only admins can manage members")
-			return
-		}
-		next.ServeHTTP(w, r)
-	}))
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -157,6 +171,8 @@ func resolveStaticFile(urlPath string) (string, bool) {
 	switch name {
 	case "admin":
 		return "admin/index.html", true
+	case "projects":
+		return "projects.html", true
 	}
 	return name, true
 }
@@ -166,7 +182,7 @@ func staticPageRequiresAuth(file string) bool {
 		return false
 	}
 	switch file {
-	case "index.html", "login.html", "bill-detail.html", "activate.html":
+	case "index.html", "login.html", "bill-detail.html", "activate.html", "share.html":
 		return false
 	default:
 		return true
@@ -188,20 +204,7 @@ func (s *Server) requestIsAdmin(r *http.Request) bool {
 	return s.cfg.IsAdminEmail(user.Email)
 }
 
-// canManageGroup reports whether the caller may change a group: admins may edit
-// any group, while everyone else may only edit the group they lead.
-func (s *Server) canManageGroup(r *http.Request, leaderUserID *int64) bool {
-	if s.requestIsAdmin(r) {
-		return true
-	}
-	userID, ok := s.auth.RequestUser(r)
-	if !ok {
-		return false
-	}
-	return userLeadsGroup(userID, leaderUserID)
-}
-
-// userLeadsGroup is the pure half of the rule above, kept separate so the
+// userLeadsGroup is the pure half of the group-edit rule, kept separate so the
 // permission check can be tested without a database.
 func userLeadsGroup(userID int64, leaderUserID *int64) bool {
 	return leaderUserID != nil && *leaderUserID == userID
@@ -213,7 +216,34 @@ func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	name, ok := resolveStaticFile(r.URL.Path)
+	urlPath := r.URL.Path
+
+	// A share link: /share/<slug> renders the anonymous read-only project view.
+	if strings.HasPrefix(urlPath, "/share/") {
+		s.servePage(w, r, "share.html")
+		return
+	}
+
+	// Project-scoped pages: /p/<id>/dashboard.html and friends. The project id is
+	// stripped before resolving the file, so one set of HTML files serves every
+	// project and the browser learns the id from its own URL.
+	projectID, rest, ok := splitProjectPath(urlPath)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	if projectID > 0 {
+		if !s.pageAllowsProject(w, r, projectID) {
+			return
+		}
+		if rest == "" {
+			http.Redirect(w, r, fmt.Sprintf("/p/%d/dashboard.html", projectID), http.StatusFound)
+			return
+		}
+		urlPath = rest
+	}
+
+	name, ok := resolveStaticFile(urlPath)
 	if !ok {
 		http.NotFound(w, r)
 		return
@@ -224,12 +254,86 @@ func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Signed-in visitors landing on the public home are taken to their dashboard.
+	// A signed-in visitor landing on the bare home is sent into their first
+	// project; with no project yet, the create-project screen is the destination.
 	if name == "index.html" && s.auth.RequestValid(r) {
-		http.Redirect(w, r, "/dashboard.html", http.StatusFound)
+		http.Redirect(w, r, s.projectsHome(r), http.StatusFound)
+		return
+	}
+	if name == "dashboard.html" && projectID == 0 && s.auth.RequestValid(r) {
+		// Legacy /dashboard.html bookmark: move it under the user's project.
+		http.Redirect(w, r, s.projectsHome(r), http.StatusFound)
 		return
 	}
 
+	s.servePage(w, r, name)
+}
+
+// splitProjectPath peels a leading /p/<id>/ off a path. It returns projectID 0
+// when the path is not project scoped, and ok=false when it looks project scoped
+// but the id is not a positive integer.
+func splitProjectPath(urlPath string) (int64, string, bool) {
+	if !strings.HasPrefix(urlPath, "/p/") {
+		return 0, urlPath, true
+	}
+	remainder := strings.TrimPrefix(urlPath, "/p/")
+	slash := strings.Index(remainder, "/")
+	idText := remainder
+	rest := ""
+	if slash >= 0 {
+		idText = remainder[:slash]
+		rest = remainder[slash+1:]
+	}
+	id, err := strconv.ParseInt(idText, 10, 64)
+	if err != nil || id <= 0 {
+		return 0, "", false
+	}
+	if rest != "" {
+		rest = "/" + rest
+	}
+	return id, rest, true
+}
+
+// pageAllowsProject renders a project page only for a member of that project.
+// An outsider is sent to their own first project rather than shown a 403, which
+// would confirm the project exists.
+func (s *Server) pageAllowsProject(w http.ResponseWriter, r *http.Request, projectID int64) bool {
+	if !s.auth.RequestValid(r) {
+		http.Redirect(w, r, "/login.html", http.StatusFound)
+		return false
+	}
+	userID, _ := s.auth.RequestUser(r)
+	var member bool
+	err := s.db.QueryRow(r.Context(), `
+		SELECT EXISTS(SELECT 1 FROM project_members WHERE project_id = $1 AND user_id = $2)`,
+		projectID, userID).Scan(&member)
+	if err != nil {
+		s.logger.Error("check page membership", "project_id", projectID, "error", err)
+		http.Redirect(w, r, s.projectsHome(r), http.StatusFound)
+		return false
+	}
+	if !member {
+		http.Redirect(w, r, s.projectsHome(r), http.StatusFound)
+		return false
+	}
+	return true
+}
+
+// projectsHome is where a signed-in user belongs: their first project, or the
+// project picker when they have none yet.
+func (s *Server) projectsHome(r *http.Request) string {
+	userID, ok := s.auth.RequestUser(r)
+	if !ok {
+		return "/login.html"
+	}
+	projects, err := s.listProjectsFor(r.Context(), userID)
+	if err != nil || len(projects) == 0 {
+		return "/projects"
+	}
+	return fmt.Sprintf("/p/%d/dashboard.html", projects[0].ID)
+}
+
+func (s *Server) servePage(w http.ResponseWriter, r *http.Request, name string) {
 	data, err := fs.ReadFile(s.webFS, name)
 	if err != nil {
 		http.NotFound(w, r)

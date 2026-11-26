@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title data-i18n="home.docTitle">Bill Sharing</title>
+    <link rel="stylesheet" href="/css/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="shell topbar-inner">
+        <a class="brand" href="/" data-i18n="app.name">Bill Sharing</a>
+        <div class="topbar-actions">
+          <div data-lang-switcher></div>
+          <a class="btn btn-quiet" href="/login.html" data-i18n="home.signIn">Sign in</a>
+        </div>
+      </div>
+    </header>
+
+    <main class="shell main">
+      <div id="share-body">
+        <div class="page-head">
+          <div>
+            <div class="eyebrow" data-i18n="public.sharedProject">Shared project</div>
+            <h1 id="project-name">—</h1>
+            <p class="sub" id="project-members"></p>
+          </div>
+        </div>
+
+        <section class="grid grid-3" id="summary" aria-label="Summary"></section>
+
+        <section class="card" aria-labelledby="bills-title">
+          <div class="card-head">
+            <div>
+              <h2 id="bills-title" data-i18n="public.heading">Shared bills</h2>
+              <div class="muted" id="bills-hint" data-i18n="public.sub"></div>
+            </div>
+            <div class="segmented" id="bills-filter" role="group" aria-label="Bill filter">
+              <button type="button" data-filter="ongoing" class="active" data-i18n="public.ongoing">Ongoing</button>
+              <button type="button" data-filter="all" data-i18n="public.all">All</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="table" id="bills-table">
+              <thead>
+                <tr>
+                  <th class="shares-toggle-col"><span class="sr-only">Expand</span></th>
+                  <th data-i18n="index.bill">Bill</th>
+                  <th data-i18n="index.date">Date</th>
+                  <th data-i18n="index.paidBy">Paid by</th>
+                  <th data-i18n="public.members">Shared with</th>
+                  <th data-i18n="index.status">Status</th>
+                  <th class="right" data-i18n="index.amount">Amount</th>
+                </tr>
+              </thead>
+              <tbody id="bills-body"></tbody>
+            </table>
+          </div>
+          <div class="empty hidden" id="bills-empty">
+            <span id="bills-empty-text" data-i18n="public.none">No bills shared yet.</span>
+          </div>
+        </section>
+      </div>
+
+      <div class="empty hidden" id="share-missing">
+        <p class="strong" data-i18n="projects.shareMissing">This share link is not available.</p>
+        <p class="muted" data-i18n="projects.shareMissingHint">It may have been turned off by the project owner.</p>
+        <p><a class="btn" href="/login.html" data-i18n="home.signIn">Sign in</a></p>
+      </div>
+    </main>
+
+    <script src="/js/i18n.js"></script>
+    <script src="/js/api.js"></script>
+    <script src="/js/common.js"></script>
+    <script src="/js/public-list.js"></script>
+  </body>
+</html>

@@ -48,12 +48,14 @@ func (s *Server) redactMember(viewerID int64, viewerIsAdmin bool, m *models.Memb
 }
 
 func (s *Server) handleListMembers(w http.ResponseWriter, r *http.Request) {
+	pc, _ := projectFrom(r.Context())
 	ctx := r.Context()
 	rows, err := s.db.Query(ctx, `
-		SELECT id, `+userLabelSQL+`, phone, email, notes, avatar_color, is_active,
-		       (password_hash IS NOT NULL) AS has_password, is_public, created_at, updated_at
-		FROM users
-		ORDER BY is_active DESC, `+userLabelSQL+` ASC`)
+		SELECT u.id, `+userLabelSQL+`, u.phone, u.email, u.notes, u.avatar_color, u.is_active,
+		       (u.password_hash IS NOT NULL) AS has_password, u.is_public, u.created_at, u.updated_at
+		FROM users u
+		JOIN project_members pm ON pm.user_id = u.id AND pm.project_id = $1
+		ORDER BY u.is_active DESC, `+userLabelSQL+` ASC`, pc.ProjectID)
 	if err != nil {
 		s.logger.Error("list members", "error", err)
 		writeError(w, http.StatusInternalServerError, "Could not load members")
@@ -81,8 +83,8 @@ func (s *Server) handleListMembers(w http.ResponseWriter, r *http.Request) {
 	groupRows, err := s.db.Query(ctx, `
 		SELECT gm.member_id, g.id, g.name
 		FROM group_members gm
-		JOIN member_groups g ON g.id = gm.group_id
-		ORDER BY g.name ASC`)
+		JOIN member_groups g ON g.id = gm.group_id AND g.project_id = $1
+		ORDER BY g.name ASC`, pc.ProjectID)
 	if err != nil {
 		s.logger.Error("list member groups", "error", err)
 		writeError(w, http.StatusInternalServerError, "Could not load members")
@@ -116,6 +118,8 @@ func (s *Server) handleListMembers(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCreateMember(w http.ResponseWriter, r *http.Request) {
+	pc, _ := projectFrom(r.Context())
+
 	var in memberInput
 	if err := readJSON(w, r, &in); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -137,10 +141,13 @@ func (s *Server) handleCreateMember(w http.ResponseWriter, r *http.Request) {
 		color = avatarColor(name)
 	}
 
+	ctx := r.Context()
 	email := strings.TrimSpace(in.Email)
 	if email != "" {
+		// Email identity is global (an account can join several projects), so the
+		// uniqueness check stays global.
 		var taken bool
-		if err := s.db.QueryRow(r.Context(), `
+		if err := s.db.QueryRow(ctx, `
 			SELECT EXISTS(SELECT 1 FROM users WHERE lower(email) = lower($1))`, email,
 		).Scan(&taken); err != nil {
 			s.logger.Error("check member email", "error", err)
@@ -153,7 +160,7 @@ func (s *Server) handleCreateMember(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	username, err := accounts.AllocUsername(r.Context(), s.db, accounts.UsernameBase(name, email))
+	username, err := accounts.AllocUsername(ctx, s.db, accounts.UsernameBase(name, email))
 	if err != nil {
 		s.logger.Error("alloc member username", "error", err)
 		writeError(w, http.StatusInternalServerError, "Could not create member")
@@ -164,7 +171,7 @@ func (s *Server) handleCreateMember(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var m models.Member
-	err = s.db.QueryRow(r.Context(), `
+	err = s.db.QueryRow(ctx, `
 		INSERT INTO users (username, email, password_hash, display_name, phone, notes, avatar_color, is_active)
 		VALUES ($1, $2, NULL, $3, $4, $5, $6, $7)
 		RETURNING id, `+userLabelSQL+`, phone, email, notes, avatar_color, is_active,
@@ -180,21 +187,31 @@ func (s *Server) handleCreateMember(w http.ResponseWriter, r *http.Request) {
 	}
 	m.Groups = []models.MemberGroupRef{}
 
+	// The new account only exists for this project, so join it there.
+	if _, err := s.db.Exec(ctx, `
+		INSERT INTO project_members (project_id, user_id, role) VALUES ($1, $2, 'member')
+		ON CONFLICT (project_id, user_id) DO NOTHING`, pc.ProjectID, m.ID); err != nil {
+		s.logger.Error("create member membership", "error", err)
+		writeError(w, http.StatusInternalServerError, "Could not create member")
+		return
+	}
+
 	// Only invite when the admin actually supplied a real address; members added
 	// without one get a placeholder and simply can never sign in.
 	if deliverableEmail(in.Email) && s.mailer.Enabled() {
-		s.sendInvite(m.Name, m.Email, m.ID)
+		s.sendInvite(m.Name, m.Email, m.ID, pc.ProjectID)
 	}
 
 	writeJSON(w, http.StatusCreated, m)
 }
 
 func (s *Server) handleGetMember(w http.ResponseWriter, r *http.Request) {
+	pc, _ := projectFrom(r.Context())
 	id, ok := pathID(w, r, "id")
 	if !ok {
 		return
 	}
-	member, err := s.loadMember(r.Context(), id)
+	member, err := s.loadMember(r.Context(), pc.ProjectID, id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "Member not found")
 		return
@@ -210,6 +227,7 @@ func (s *Server) handleGetMember(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUpdateMember(w http.ResponseWriter, r *http.Request) {
+	pc, _ := projectFrom(r.Context())
 	id, ok := pathID(w, r, "id")
 	if !ok {
 		return
@@ -222,7 +240,7 @@ func (s *Server) handleUpdateMember(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	existing, err := s.loadMember(ctx, id)
+	existing, err := s.loadMember(ctx, pc.ProjectID, id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "Member not found")
 		return
@@ -303,7 +321,7 @@ func (s *Server) handleUpdateMember(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	member, err := s.loadMember(ctx, id)
+	member, err := s.loadMember(ctx, pc.ProjectID, id)
 	if err != nil {
 		s.logger.Error("load member", "error", err)
 		writeError(w, http.StatusInternalServerError, "Could not load member")
@@ -312,12 +330,14 @@ func (s *Server) handleUpdateMember(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, member)
 }
 
-func (s *Server) loadMember(ctx context.Context, id int64) (models.Member, error) {
+func (s *Server) loadMember(ctx context.Context, projectID, id int64) (models.Member, error) {
 	var m models.Member
 	err := s.db.QueryRow(ctx, `
-		SELECT id, `+userLabelSQL+`, phone, email, notes, avatar_color, is_active,
-		       (password_hash IS NOT NULL) AS has_password, is_public, created_at, updated_at
-		FROM users WHERE id = $1`, id,
+		SELECT u.id, `+userLabelSQL+`, u.phone, u.email, u.notes, u.avatar_color, u.is_active,
+		       (u.password_hash IS NOT NULL) AS has_password, u.is_public, u.created_at, u.updated_at
+		FROM users u
+		JOIN project_members pm ON pm.user_id = u.id AND pm.project_id = $2
+		WHERE u.id = $1`, id, projectID,
 	).Scan(&m.ID, &m.Name, &m.Phone, &m.Email, &m.Notes, &m.AvatarColor,
 		&m.IsActive, &m.HasPassword, &m.IsPublic, &m.CreatedAt, &m.UpdatedAt)
 	if err != nil {
@@ -328,9 +348,9 @@ func (s *Server) loadMember(ctx context.Context, id int64) (models.Member, error
 	rows, err := s.db.Query(ctx, `
 		SELECT g.id, g.name
 		FROM group_members gm
-		JOIN member_groups g ON g.id = gm.group_id
+		JOIN member_groups g ON g.id = gm.group_id AND g.project_id = $2
 		WHERE gm.member_id = $1
-		ORDER BY g.name`, id)
+		ORDER BY g.name`, id, projectID)
 	if err != nil {
 		return models.Member{}, err
 	}

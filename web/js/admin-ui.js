@@ -1,4 +1,5 @@
 (() => {
+  const projectId = Chrome.currentProjectID();
   const state = {
     members: [],
     groups: [],
@@ -53,7 +54,7 @@
     button.disabled = true;
     const label = button.textContent;
     Icons.setLabel(button, I18n.t("admin.inviteSending"));
-    API.sendInvite(member.id)
+    API.sendInvite(projectId, member.id)
       .then(() => UI.toast(I18n.t("admin.inviteSent"), "success"))
       .catch((err) => UI.toast(UI.errorMessage(err), "error"))
       .finally(() => {
@@ -231,10 +232,10 @@
     saveBtn.disabled = true;
     try {
       if (state.editingMemberId) {
-        await API.updateMember(state.editingMemberId, payload);
+        await API.updateMember(projectId, state.editingMemberId, payload);
         UI.toast(I18n.t("admin.memberUpdated"), "success");
       } else {
-        await API.createMember(payload);
+        await API.createMember(projectId, payload);
         UI.toast(I18n.t("admin.memberAdded"), "success");
       }
       closeMemberModal();
@@ -377,10 +378,10 @@
     saveBtn.disabled = true;
     try {
       if (state.editingGroupId) {
-        await API.updateGroup(state.editingGroupId, payload);
+        await API.updateGroup(projectId, state.editingGroupId, payload);
         UI.toast(I18n.t("admin.groupUpdated"), "success");
       } else {
-        await API.createGroup(payload);
+        await API.createGroup(projectId, payload);
         UI.toast(I18n.t("admin.groupCreated"), "success");
       }
       closeGroupModal();
@@ -461,8 +462,8 @@
 
   async function loadAll() {
     const [members, groups, session] = await Promise.all([
-      API.listMembers(),
-      API.listGroups(),
+      API.listMembers(projectId),
+      API.listGroups(projectId),
       API.currentSession(),
     ]);
     state.members = members;

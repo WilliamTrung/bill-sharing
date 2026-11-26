@@ -193,6 +193,163 @@ a:hover {
   padding-bottom: 64px;
 }
 
+/* --- projects pane ------------------------------------------------------- */
+
+/* Chrome.start adds .main-layout and wraps page content in .main-content, so a
+   page's own markup never has to know about the pane. */
+.main-layout {
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr);
+  gap: 22px;
+  align-items: start;
+}
+
+.main-content {
+  min-width: 0;
+}
+
+body.pane-collapsed .main-layout {
+  grid-template-columns: 56px minmax(0, 1fr);
+}
+
+.project-pane {
+  position: sticky;
+  top: 78px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 10px;
+  overflow: hidden;
+}
+
+.pane-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 2px 8px;
+}
+
+.pane-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pane-toggle,
+.pane-add {
+  flex: none;
+}
+
+/* The chevron points along the collapse direction. */
+body.pane-collapsed .pane-toggle svg {
+  transform: rotate(180deg);
+}
+
+.pane-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.pane-link {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 9px;
+  border-radius: 9px;
+  color: var(--ink);
+  text-decoration: none;
+  font-size: 0.92rem;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.pane-link:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.pane-link.active {
+  background: var(--accent-weak, rgba(47, 111, 95, 0.12));
+  font-weight: 600;
+}
+
+.pane-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pane-role {
+  flex: none;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-faint);
+}
+
+.pane-empty {
+  padding: 8px 9px;
+  font-size: 0.85rem;
+  color: var(--ink-faint);
+}
+
+/* Collapsed: icons and initial only, so the rail stays usable. */
+body.pane-collapsed .pane-title,
+body.pane-collapsed .pane-role,
+body.pane-collapsed .pane-empty {
+  display: none;
+}
+
+body.pane-collapsed .pane-head {
+  justify-content: center;
+}
+
+body.pane-collapsed .pane-add {
+  display: none;
+}
+
+body.pane-collapsed .pane-list {
+  justify-items: center;
+}
+
+body.pane-collapsed .pane-link {
+  padding: 7px 0;
+  justify-content: center;
+  width: 100%;
+}
+
+body.pane-collapsed .pane-name {
+  flex: none;
+  max-width: 1.6ch;
+  overflow: hidden;
+  text-overflow: clip;
+  font-size: 0.8rem;
+}
+
+.project-card {
+  display: grid;
+  gap: 6px;
+  text-decoration: none;
+  color: inherit;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.project-card:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-lg);
+}
+
 .page-head {
   display: flex;
   align-items: flex-end;
@@ -1565,6 +1722,50 @@ table.table tbody tr.shares-row .preview-total {
 
   .main {
     padding-top: 20px;
+  }
+
+  /* The pane becomes an off-canvas panel: one column, and it slides in over the
+     content instead of stealing width from it. */
+  .main-layout,
+  body.pane-collapsed .main-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .project-pane {
+    position: fixed;
+    top: 58px;
+    left: 0;
+    bottom: 0;
+    z-index: 65;
+    width: 240px;
+    border-radius: 0;
+    border-left: none;
+    border-bottom: none;
+    transform: translateX(-102%);
+    transition: transform 0.18s ease;
+    overflow-y: auto;
+  }
+
+  .project-pane.open {
+    transform: translateX(0);
+    box-shadow: var(--shadow-lg);
+  }
+
+  /* On mobile the collapsed rail does not apply: the pane is either open or off
+     screen, so undone by placing these after the collapsed rules. */
+  body.pane-collapsed .pane-title,
+  body.pane-collapsed .pane-role,
+  body.pane-collapsed .pane-add {
+    display: revert;
+  }
+
+  body.pane-collapsed .pane-link {
+    justify-content: flex-start;
+    padding: 7px 9px;
+  }
+
+  body.pane-collapsed .pane-name {
+    max-width: none;
   }
 }
 

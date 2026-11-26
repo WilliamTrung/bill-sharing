@@ -18,6 +18,33 @@ type User struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
+// Project is the tenant boundary: one bill book shared by a set of people.
+type Project struct {
+	ID          int64  `json:"id"`
+	Name        string `json:"name"`
+	OwnerUserID int64  `json:"owner_user_id"`
+	// Role is the caller's role in this project: "owner" or "member".
+	Role        string `json:"role,omitempty"`
+	MemberCount int    `json:"member_count"`
+	IsActive    bool   `json:"is_active"`
+	// PublicSlug is only returned to the owner, since it is the share credential.
+	PublicSlug    string    `json:"public_slug,omitempty"`
+	PublicEnabled bool      `json:"public_enabled"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+}
+
+// ProjectMember is one person in a project, for the membership screen.
+type ProjectMember struct {
+	UserID   int64  `json:"user_id"`
+	Name     string `json:"name"`
+	Email    string `json:"email"`
+	Role     string `json:"role"`
+	IsActive bool   `json:"is_active"`
+	// HasPassword is false for people who were added but never activated.
+	HasPassword bool `json:"has_password"`
+}
+
 type MemberGroupRef struct {
 	ID   int64  `json:"id"`
 	Name string `json:"name"`

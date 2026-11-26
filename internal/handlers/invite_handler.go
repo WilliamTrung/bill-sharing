@@ -17,8 +17,23 @@ import (
 // handleSendInvite re-issues an invitation email for an account that has not set
 // a password yet.
 func (s *Server) handleSendInvite(w http.ResponseWriter, r *http.Request) {
-	id, ok := pathID(w, r, "id")
+	pc, _ := projectFrom(r.Context())
+	id, ok := pathID(w, r, "userID")
 	if !ok {
+		return
+	}
+
+	// Only someone in this project can be re-invited through it.
+	var inProject bool
+	if err := s.db.QueryRow(r.Context(), `
+		SELECT EXISTS(SELECT 1 FROM project_members WHERE project_id = $1 AND user_id = $2)`,
+		pc.ProjectID, id).Scan(&inProject); err != nil {
+		s.logger.Error("check invite membership", "error", err)
+		writeError(w, http.StatusInternalServerError, "Could not send invite")
+		return
+	}
+	if !inProject {
+		writeError(w, http.StatusNotFound, "Member not found")
 		return
 	}
 
@@ -45,18 +60,18 @@ func (s *Server) handleSendInvite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.sendInvite(invitee.DisplayName, invitee.Email, invitee.ID)
+	s.sendInvite(invitee.DisplayName, invitee.Email, invitee.ID, pc.ProjectID)
 	writeJSON(w, http.StatusOK, map[string]bool{"sent": true})
 }
 
 // handlePublicInvite describes an invitation so the activation page can greet the
 // invitee by name before they choose a password.
 func (s *Server) handlePublicInvite(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.inviteUser(w, r)
+	invite, ok := s.inviteUser(w, r)
 	if !ok {
 		return
 	}
-	invitee, err := accounts.Invitee(r.Context(), s.db, userID)
+	invitee, err := accounts.Invitee(r.Context(), s.db, invite.UserID)
 	if errors.Is(err, accounts.ErrInvalidCredentials) {
 		writeError(w, http.StatusGone, "This invitation has already been used")
 		return
@@ -79,7 +94,7 @@ func (s *Server) handlePublicInvite(w http.ResponseWriter, r *http.Request) {
 
 // handleAcceptInvite sets the first password and signs the invitee in.
 func (s *Server) handleAcceptInvite(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.inviteUser(w, r)
+	invite, ok := s.inviteUser(w, r)
 	if !ok {
 		return
 	}
@@ -100,7 +115,7 @@ func (s *Server) handleAcceptInvite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := accounts.Activate(r.Context(), s.db, userID, body.Password)
+	user, err := accounts.Activate(r.Context(), s.db, invite.UserID, body.Password)
 	if errors.Is(err, accounts.ErrInvalidCredentials) {
 		writeError(w, http.StatusGone, "This invitation has already been used")
 		return
@@ -121,32 +136,37 @@ func (s *Server) handleAcceptInvite(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   int(s.auth.TTL().Seconds()),
 	})
 	writeJSON(w, http.StatusOK, map[string]any{
-		"ok":       true,
-		"username": user.Username,
+		"ok":         true,
+		"username":   user.Username,
+		"project_id": invite.ProjectID,
 	})
 }
 
 // inviteUser resolves and verifies the `token` query parameter.
-func (s *Server) inviteUser(w http.ResponseWriter, r *http.Request) (int64, bool) {
+func (s *Server) inviteUser(w http.ResponseWriter, r *http.Request) (auth.Invite, bool) {
 	token := strings.TrimSpace(r.URL.Query().Get("token"))
 	if token == "" {
 		writeError(w, http.StatusBadRequest, "Missing invitation token")
-		return 0, false
+		return auth.Invite{}, false
 	}
-	userID, ok := s.auth.ParseInvite(token, time.Now())
+	invite, ok := s.auth.ParseInvite(token, time.Now())
 	if !ok {
 		writeError(w, http.StatusBadRequest, "This invitation link is invalid or expired")
-		return 0, false
+		return auth.Invite{}, false
 	}
-	return userID, true
+	return invite, true
 }
 
 // sendInvite mails a fresh activation link without blocking the request path.
-func (s *Server) sendInvite(name, email string, userID int64) {
-	link := fmt.Sprintf("%s/activate.html?token=%s", s.cfg.PublicBaseURL, s.auth.IssueInvite(userID, time.Now()))
+// The project id travels inside the signed token so the invitee lands in the
+// right place after activating.
+func (s *Server) sendInvite(name, email string, userID, projectID int64) {
+	link := fmt.Sprintf("%s/activate.html?token=%s", s.cfg.PublicBaseURL,
+		s.auth.IssueInvite(userID, projectID, time.Now()))
 	subject := "Activate your Bill Sharing account"
 	body := fmt.Sprintf(
-		"Hi %s,\n\nYou were added to Bill Sharing.\n\nSet your password to sign in:\n%s\n\nThis link expires in 7 days.\n",
+		"Hi %s,\n\nYou were added to a shared bill project on Bill Sharing.\n\n"+
+			"Set your password to sign in:\n%s\n\nThis link expires in 7 days.\n",
 		name, link,
 	)
 

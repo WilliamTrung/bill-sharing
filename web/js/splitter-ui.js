@@ -1,4 +1,5 @@
 (() => {
+  const projectId = Chrome.currentProjectID();
   const MAX_FILES = 10;
   const MAX_BYTES = 25 * 1024 * 1024;
   const ALLOWED = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf"]);
@@ -601,9 +602,9 @@
     submitBtn.disabled = true;
     Icons.setLabel(submitBtn, I18n.t("bill.saving"));
     try {
-      const created = await API.createBill(payload, state.files);
+      const created = await API.createBill(projectId, payload, state.files);
       UI.toast(I18n.t("bill.saved"), "success");
-      window.location.replace(`/bill-detail.html?id=${created.id}`);
+      window.location.replace(`/p/${projectId}/bill-detail.html?id=${created.id}`);
     } catch (err) {
       billError.textContent = UI.errorMessage(err);
       billError.classList.remove("hidden");
@@ -624,8 +625,8 @@
 
   async function load() {
     const [members, groups, session] = await Promise.all([
-      API.listMembers(),
-      API.listGroups(),
+      API.listMembers(projectId),
+      API.listGroups(projectId),
       API.currentSession(),
     ]);
     state.members = members;
@@ -724,7 +725,7 @@
   // preview are rebuilt — never the payer or the form fields.
   const refreshParticipants = UI.debounce(async () => {
     try {
-      const [members, groups] = await Promise.all([API.listMembers(), API.listGroups()]);
+      const [members, groups] = await Promise.all([API.listMembers(projectId), API.listGroups(projectId)]);
       state.members = members;
       state.groups = groups;
       renderParticipants();

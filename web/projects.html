@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title data-i18n="projects.docTitle">Projects · Bill Sharing</title>
+    <link rel="stylesheet" href="/css/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="shell topbar-inner">
+        <a class="brand" href="/" data-i18n="app.name">Bill Sharing</a>
+        <div class="topbar-actions">
+          <div data-lang-switcher></div>
+          <a class="btn btn-quiet" href="/profile.html" data-icon="settings" data-i18n="nav.profile">Profile</a>
+          <button class="btn btn-quiet" type="button" data-logout data-icon="log-out" data-i18n="nav.signOut">Sign out</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="shell main">
+      <div class="page-head">
+        <div>
+          <div class="eyebrow" data-i18n="projects.eyebrow">Workspace</div>
+          <h1 data-i18n="projects.title">Projects</h1>
+          <p class="sub" data-i18n="projects.sub">Each project keeps its own bills, groups and people.</p>
+        </div>
+        <div class="head-actions">
+          <button class="btn" type="button" id="new-project" data-icon="plus" data-i18n="projects.new">New project</button>
+        </div>
+      </div>
+
+      <section class="grid grid-auto" id="project-grid"></section>
+
+      <div class="empty hidden" id="projects-empty">
+        <p class="strong" data-i18n="projects.empty">No projects yet.</p>
+        <p class="muted" data-i18n="projects.emptyHint">Create one to start sharing bills.</p>
+      </div>
+    </main>
+
+    <script src="/js/i18n.js"></script>
+    <script src="/js/api.js"></script>
+    <script src="/js/common.js"></script>
+    <script src="/js/projects.js"></script>
+  </body>
+</html>

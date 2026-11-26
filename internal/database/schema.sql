@@ -27,6 +27,36 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS is_public BOOLEAN NOT NULL DEFAULT FA
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users (lower(username));
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users (lower(email));
 
+-- Projects are the tenant boundary: every bill and group belongs to exactly one,
+-- and a user may belong to many. Accounts stay global (a user is a person, not a
+-- tenant), so joining another project is a membership row rather than a new user.
+CREATE TABLE IF NOT EXISTS projects (
+    id BIGSERIAL PRIMARY KEY,
+    name TEXT NOT NULL,
+    -- Unguessable token behind the anonymous read-only share link.
+    public_slug TEXT NOT NULL,
+    owner_user_id BIGINT NOT NULL,
+    public_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_slug ON projects (public_slug);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_owner_name ON projects (owner_user_id, lower(name));
+
+-- Who can see a project. role='owner' may rename, remove members and delete it;
+-- role='member' may add members and work with bills and groups.
+CREATE TABLE IF NOT EXISTS project_members (
+    project_id BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('owner', 'member')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (project_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_project_members_user ON project_members (user_id);
+
 CREATE TABLE IF NOT EXISTS member_groups (
     id BIGSERIAL PRIMARY KEY,
     name TEXT NOT NULL,
@@ -47,6 +77,9 @@ CREATE TABLE IF NOT EXISTS group_members (
 -- only admins can manage.
 ALTER TABLE member_groups ADD COLUMN IF NOT EXISTS leader_user_id BIGINT;
 
+-- Tenant owner of the group. Nullable only until the Phase 3 backfill below runs.
+ALTER TABLE member_groups ADD COLUMN IF NOT EXISTS project_id BIGINT;
+
 CREATE TABLE IF NOT EXISTS bills (
     id BIGSERIAL PRIMARY KEY,
     title TEXT NOT NULL,
@@ -61,6 +94,9 @@ CREATE TABLE IF NOT EXISTS bills (
 ALTER TABLE bills ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'OPEN';
 ALTER TABLE bills DROP CONSTRAINT IF EXISTS bills_status_check;
 ALTER TABLE bills ADD CONSTRAINT bills_status_check CHECK (status IN ('OPEN', 'SETTLED'));
+
+-- Tenant owner of the bill. Nullable only until the Phase 3 backfill below runs.
+ALTER TABLE bills ADD COLUMN IF NOT EXISTS project_id BIGINT;
 
 CREATE TABLE IF NOT EXISTS bill_participants (
     id BIGSERIAL PRIMARY KEY,
@@ -104,6 +140,9 @@ CREATE TABLE IF NOT EXISTS bill_attachments (
 );
 
 CREATE INDEX IF NOT EXISTS idx_bills_date ON bills (bill_date DESC, id DESC);
+-- Tenant-scoped list queries: the bill list is always filtered by project.
+CREATE INDEX IF NOT EXISTS idx_bills_project_date ON bills (project_id, bill_date DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_member_groups_project ON member_groups (project_id, name);
 CREATE INDEX IF NOT EXISTS idx_bill_participants_bill ON bill_participants (bill_id);
 CREATE INDEX IF NOT EXISTS idx_bill_member_shares_bill ON bill_member_shares (bill_id);
 CREATE INDEX IF NOT EXISTS idx_bill_member_shares_member ON bill_member_shares (member_id);
@@ -154,6 +193,105 @@ DO $$ BEGIN
 END $$;
 
 UPDATE users SET display_name = username WHERE display_name = '' AND username <> '';
+
+-- Adopt pre-project data into a single default project so nothing is orphaned.
+--
+-- Only runs while legacy rows exist (bills or groups with no project_id), so it
+-- adopts once and then never again — a default project the user later deletes
+-- does not reappear on the next boot. On a fresh install there is no data and no
+-- user yet (this file runs before the seed account is created), so it returns
+-- immediately; projects are created in-app from then on.
+--
+-- Idempotent on repeated boots: the project is keyed by a fixed slug and the
+-- UPDATEs only touch rows whose project_id is still NULL.
+DO $$
+DECLARE
+    default_project_id BIGINT;
+    default_owner_id BIGINT;
+    has_legacy_rows BOOLEAN;
+BEGIN
+    SELECT EXISTS (
+        SELECT 1 FROM bills WHERE project_id IS NULL
+        UNION ALL
+        SELECT 1 FROM member_groups WHERE project_id IS NULL
+    ) INTO has_legacy_rows;
+    IF NOT has_legacy_rows THEN
+        RETURN;
+    END IF;
+
+    SELECT id INTO default_owner_id FROM users ORDER BY is_active DESC, id ASC LIMIT 1;
+    IF default_owner_id IS NULL THEN
+        RETURN;
+    END IF;
+
+    INSERT INTO projects (name, public_slug, owner_user_id)
+    VALUES ('My bills', 'default', default_owner_id)
+    ON CONFLICT (public_slug) DO NOTHING;
+
+    SELECT id INTO default_project_id FROM projects WHERE public_slug = 'default';
+
+    UPDATE bills SET project_id = default_project_id WHERE project_id IS NULL;
+    UPDATE member_groups SET project_id = default_project_id WHERE project_id IS NULL;
+
+    -- Everyone who existed before projects becomes a member of the default one;
+    -- its owner keeps the owner role.
+    INSERT INTO project_members (project_id, user_id, role)
+    SELECT default_project_id, u.id,
+           CASE WHEN u.id = default_owner_id THEN 'owner' ELSE 'member' END
+    FROM users u
+    ON CONFLICT (project_id, user_id) DO NOTHING;
+END $$;
+
+-- FKs for the tenant owner columns. Added after the backfill so the constraint
+-- can be validated against already-populated rows.
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'bills_project_id_fkey'
+    ) THEN
+        ALTER TABLE bills
+            ADD CONSTRAINT bills_project_id_fkey
+            FOREIGN KEY (project_id) REFERENCES projects(id);
+    END IF;
+END $$;
+
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'member_groups_project_id_fkey'
+    ) THEN
+        ALTER TABLE member_groups
+            ADD CONSTRAINT member_groups_project_id_fkey
+            FOREIGN KEY (project_id) REFERENCES projects(id);
+    END IF;
+END $$;
+
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'projects_owner_user_id_fkey'
+    ) THEN
+        ALTER TABLE projects
+            ADD CONSTRAINT projects_owner_user_id_fkey
+            FOREIGN KEY (owner_user_id) REFERENCES users(id);
+    END IF;
+END $$;
+
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'member_groups_leader_user_id_fkey'
+    ) THEN
+        ALTER TABLE member_groups
+            ADD CONSTRAINT member_groups_leader_user_id_fkey
+            FOREIGN KEY (leader_user_id) REFERENCES users(id);
+    END IF;
+END $$;
+
+-- Every bill and group must now name its project. The backfill above ensured no
+-- legacy row is left NULL, and the create paths write the column, so this is the
+-- point where the tenant boundary becomes structural rather than a convention.
+ALTER TABLE bills ALTER COLUMN project_id SET NOT NULL;
+ALTER TABLE member_groups ALTER COLUMN project_id SET NOT NULL;
+
+-- The old global ordering index is superseded by idx_bills_project_date.
+DROP INDEX IF EXISTS idx_bills_date;
 
 -- Repair bills settled by an older build, which set only bills.status and left the
 -- shares flagged open. Those rows kept showing up in balances and "To settle" as

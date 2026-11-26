@@ -29,7 +29,9 @@
     Icons.setLabel(submit, I18n.t("login.signingIn"));
     try {
       await API.login({ identifier: value, password: secret });
-      window.location.replace("/dashboard.html");
+      // The server picks the landing project (/p/<id>/dashboard.html) or the
+      // project picker when the account has none yet.
+      window.location.replace("/");
     } catch (err) {
       showError(err.message || I18n.t("login.errFailed"));
       password.select();

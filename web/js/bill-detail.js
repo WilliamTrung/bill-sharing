@@ -1,4 +1,5 @@
 (() => {
+  const projectId = Chrome.currentProjectID();
   const billId = Number(new URLSearchParams(window.location.search).get("id"));
   const cache = { bill: null };
 
@@ -333,7 +334,7 @@
       if (!confirmed) return;
     }
     try {
-      const result = await API.updateShareSettled(cache.bill.id, share.id, action);
+      const result = await API.updateShareSettled(projectId, cache.bill.id, share.id, action);
       share.is_settled = result.is_settled;
       share.settle_requested_at = result.requested ? new Date().toISOString() : null;
       // The bill completes once every share is settled, so take the new status.
@@ -350,7 +351,7 @@
     const next = bill.status === "SETTLED" ? "OPEN" : "SETTLED";
     toggleBtn.disabled = true;
     try {
-      const result = await API.updateBillStatus(bill.id, next);
+      const result = await API.updateBillStatus(projectId, bill.id, next);
       bill.status = result.status;
       UI.toast(I18n.t("detail.statusUpdated"), "success");
       renderAll();
@@ -368,9 +369,9 @@
 
     deleteBtn.disabled = true;
     try {
-      await API.deleteBill(bill.id);
+      await API.deleteBill(projectId, bill.id);
       UI.toast(I18n.t("detail.deleted"), "success");
-      window.location.replace("/dashboard.html");
+      window.location.replace(`/p/${projectId}/dashboard.html`);
     } catch (err) {
       UI.toast(UI.errorMessage(err), "error");
       deleteBtn.disabled = false;
@@ -394,7 +395,7 @@
   // deliberately left untouched.
   const refresh = UI.debounce(async () => {
     try {
-      cache.bill = await API.publicBill(billId);
+      cache.bill = await API.getBill(projectId, billId);
       renderAll();
     } catch (err) {
       /* keep the current view if the background refresh fails */
@@ -421,7 +422,7 @@
       state.userId = session && session.user ? session.user.id : null;
       state.isAdmin = Boolean(session && session.is_admin);
       try {
-        cache.bill = await API.publicBill(billId);
+        cache.bill = await API.getBill(projectId, billId);
       } catch (err) {
         if (err && err.status === 404) {
           UI.toast(I18n.t("detail.notFound"), "error");

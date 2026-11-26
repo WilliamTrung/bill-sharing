@@ -30,7 +30,10 @@ const Realtime = (() => {
     if (!event.bill) return null;
 
     const title = event.bill.title || "";
-    const href = event.bill.bill_id ? `/bill-detail.html?id=${event.bill.bill_id}` : "/dashboard.html";
+    const projectId = Chrome.currentProjectID ? Chrome.currentProjectID() : 0;
+    const href = event.bill.bill_id
+      ? `/p/${projectId}/bill-detail.html?id=${event.bill.bill_id}`
+      : `/p/${projectId}/dashboard.html`;
     const amount = Money.format(event.bill.total_amount_cents || 0, { signed: false });
     const actor = event.bill.actor_name || "";
 
@@ -65,6 +68,14 @@ const Realtime = (() => {
   }
 
   function dispatch(event) {
+    // One user may have several tabs open on different projects, so the hub
+    // delivers to the user and the tab filters. An event with no project id is
+    // treated as belonging to whichever project this tab is showing.
+    if (event.project_id && typeof Chrome !== "undefined" && Chrome.currentProjectID) {
+      const mine = Chrome.currentProjectID();
+      if (mine && event.project_id !== mine) return;
+    }
+
     // Record the notification first, so the bell updates even if a page hook is
     // slow or throws.
     const note = describe(event);
@@ -240,7 +251,12 @@ const Realtime = (() => {
 
   function url() {
     const scheme = window.location.protocol === "https:" ? "wss:" : "ws:";
-    return `${scheme}//${window.location.host}/api/ws`;
+    // The socket is established under the project this tab is showing. Events
+    // for other projects are filtered out in dispatch.
+    const projectId = typeof Chrome !== "undefined" && Chrome.currentProjectID
+      ? Chrome.currentProjectID()
+      : 0;
+    return `${scheme}//${window.location.host}/api/p/${projectId}/ws`;
   }
 
   function connect() {

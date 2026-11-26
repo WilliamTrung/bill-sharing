@@ -58,8 +58,9 @@
       form.hidden = true;
       done.hidden = false;
       UI.toast(I18n.t("activate.success"), "success");
-      // The invite already set the session cookie, so go straight in.
-      window.setTimeout(() => window.location.replace("/dashboard.html"), 600);
+      // The invite already set the session cookie, so go straight in. The server
+      // routes to the invited project, or the picker when none applies.
+      window.setTimeout(() => window.location.replace("/"), 600);
     } catch (err) {
       showError(UI.errorMessage(err));
       submit.disabled = false;

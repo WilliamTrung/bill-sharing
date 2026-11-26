@@ -14,6 +14,11 @@ const API = (() => {
     return typeof I18n !== "undefined" ? I18n.t(key, vars) : key;
   }
 
+  // pp builds a project-scoped API path, so the prefix lives in exactly one place.
+  function pp(projectId, path) {
+    return `/api/p/${projectId}${path}`;
+  }
+
   function serverMessage(raw, fallbackKey, status) {
     const translated = typeof I18n !== "undefined" ? I18n.translateServer(raw) : raw;
     if (!raw) return tr(fallbackKey, { status });
@@ -145,12 +150,58 @@ const API = (() => {
       });
     },
 
-    publicBills() {
-      return request("GET", "/api/public/bills", undefined, { redirectOn401: false });
+    // --- projects -----------------------------------------------------------
+
+    listProjects() {
+      return request("GET", "/api/projects");
     },
 
-    publicBill(id) {
-      return request("GET", `/api/public/bills/${id}`, undefined, { redirectOn401: false });
+    createProject(name) {
+      return request("POST", "/api/projects", { name });
+    },
+
+    getProject(projectId) {
+      return request("GET", pp(projectId, ""));
+    },
+
+    updateProject(projectId, data) {
+      return request("PUT", pp(projectId, ""), data);
+    },
+
+    deleteProject(projectId) {
+      return request("DELETE", pp(projectId, ""));
+    },
+
+    listProjectMembers(projectId) {
+      return request("GET", pp(projectId, "/members"));
+    },
+
+    addProjectMember(projectId, email, name) {
+      return request("POST", pp(projectId, "/members"), { email, name: name || "" });
+    },
+
+    removeProjectMember(projectId, userId) {
+      return request("DELETE", pp(projectId, `/members/${userId}`));
+    },
+
+    // --- public share links -------------------------------------------------
+
+    publicProject(slug) {
+      return request("GET", `/api/public/p/${encodeURIComponent(slug)}`, undefined, {
+        redirectOn401: false,
+      });
+    },
+
+    publicBills(slug) {
+      return request("GET", `/api/public/p/${encodeURIComponent(slug)}/bills`, undefined, {
+        redirectOn401: false,
+      });
+    },
+
+    publicBill(slug, id) {
+      return request("GET", `/api/public/p/${encodeURIComponent(slug)}/bills/${id}`, undefined, {
+        redirectOn401: false,
+      });
     },
 
     getInvite(token) {
@@ -165,71 +216,73 @@ const API = (() => {
       });
     },
 
-    sendInvite(memberId) {
-      return request("POST", `/api/members/${memberId}/invite`);
+    // --- project-scoped data ------------------------------------------------
+
+    sendInvite(projectId, userId) {
+      return request("POST", pp(projectId, `/members/${userId}/invite`));
     },
 
-    updateBillStatus(id, status) {
-      return request("PUT", `/api/bills/${id}/status`, { status });
+    updateBillStatus(projectId, id, status) {
+      return request("PUT", pp(projectId, `/bills/${id}/status`), { status });
     },
 
-    updateShareSettled(billId, shareId, action) {
-      return request("PUT", `/api/bills/${billId}/shares/${shareId}/settled`, { action });
+    updateShareSettled(projectId, billId, shareId, action) {
+      return request("PUT", pp(projectId, `/bills/${billId}/shares/${shareId}/settled`), { action });
     },
 
-    settlements() {
-      return request("GET", "/api/settlements");
+    settlements(projectId) {
+      return request("GET", pp(projectId, "/settlements"));
     },
 
-    listMembers() {
-      return request("GET", "/api/members");
+    listMembers(projectId) {
+      return request("GET", pp(projectId, "/people"));
     },
 
-    getMember(id) {
-      return request("GET", `/api/members/${id}`);
+    getMember(projectId, id) {
+      return request("GET", pp(projectId, `/people/${id}`));
     },
 
-    createMember(data) {
-      return request("POST", "/api/members", data);
+    createMember(projectId, data) {
+      return request("POST", pp(projectId, "/people"), data);
     },
 
-    updateMember(id, data) {
-      return request("PUT", `/api/members/${id}`, data);
+    updateMember(projectId, id, data) {
+      return request("PUT", pp(projectId, `/people/${id}`), data);
     },
 
-    listGroups() {
-      return request("GET", "/api/groups");
+    listGroups(projectId) {
+      return request("GET", pp(projectId, "/groups"));
     },
 
-    getGroup(id) {
-      return request("GET", `/api/groups/${id}`);
+    getGroup(projectId, id) {
+      return request("GET", pp(projectId, `/groups/${id}`));
     },
 
-    createGroup(data) {
-      return request("POST", "/api/groups", data);
+    createGroup(projectId, data) {
+      return request("POST", pp(projectId, "/groups"), data);
     },
 
-    updateGroup(id, data) {
-      return request("PUT", `/api/groups/${id}`, data);
+    updateGroup(projectId, id, data) {
+      return request("PUT", pp(projectId, `/groups/${id}`), data);
     },
 
-    listBills() {
-      return request("GET", "/api/bills");
+    listBills(projectId) {
+      return request("GET", pp(projectId, "/bills"));
     },
 
-    getBill(id) {
-      return request("GET", `/api/bills/${id}`);
+    getBill(projectId, id) {
+      return request("GET", pp(projectId, `/bills/${id}`));
     },
 
-    deleteBill(id) {
-      return request("DELETE", `/api/bills/${id}`);
+    deleteBill(projectId, id) {
+      return request("DELETE", pp(projectId, `/bills/${id}`));
     },
 
-    balances() {
-      return request("GET", "/api/balances");
+    balances(projectId) {
+      return request("GET", pp(projectId, "/balances"));
     },
 
-    async createBill(payload, files) {
+    async createBill(projectId, payload, files) {
       const form = new FormData();
       form.append("payload", JSON.stringify(payload));
       for (const file of files || []) {
@@ -238,7 +291,7 @@ const API = (() => {
 
       let response;
       try {
-        response = await fetch("/api/bills", {
+        response = await fetch(pp(projectId, "/bills"), {
           method: "POST",
           body: form,
           credentials: "same-origin",

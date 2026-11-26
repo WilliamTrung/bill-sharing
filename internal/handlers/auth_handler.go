@@ -161,10 +161,20 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "Could not load session")
 		return
 	}
+	// The project list rides along so the left pane can render immediately
+	// instead of issuing a second request on every page load.
+	projects, err := s.listProjectsFor(r.Context(), user.ID)
+	if err != nil {
+		s.logger.Error("load session projects", "error", err)
+		writeError(w, http.StatusInternalServerError, "Could not load session")
+		return
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"authenticated": true,
 		"language":      user.Language,
 		"is_admin":      s.cfg.IsAdminEmail(user.Email),
+		"projects":      projects,
 		"user": map[string]any{
 			"id":           user.ID,
 			"username":     user.Username,

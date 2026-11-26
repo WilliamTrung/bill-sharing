@@ -80,6 +80,7 @@ type plannedShare struct {
 }
 
 type billPlan struct {
+	ProjectID    int64
 	Title        string
 	Description  string
 	TotalCents   int64
@@ -99,6 +100,8 @@ type preparedAttachment struct {
 }
 
 func (s *Server) handleCreateBill(w http.ResponseWriter, r *http.Request) {
+	pc, _ := projectFrom(r.Context())
+
 	r.Body = http.MaxBytesReader(w, r.Body, s.cfg.MaxUploadBytes+2<<20)
 	if err := r.ParseMultipartForm(8 << 20); err != nil {
 		writeError(w, http.StatusBadRequest, "Invalid upload: "+err.Error())
@@ -132,7 +135,7 @@ func (s *Server) handleCreateBill(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	plan, err := s.buildBillPlan(r.Context(), payload)
+	plan, err := s.buildBillPlan(r.Context(), pc.ProjectID, payload)
 	if err != nil {
 		writeServiceError(w, err)
 		return
@@ -146,18 +149,18 @@ func (s *Server) handleCreateBill(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Tell every participant the bill exists so their list and detail views update.
-	info := s.billEventInfo(r.Context(), billID)
-	recipients, err := s.billParticipantIDs(r.Context(), billID)
+	info := s.billEventInfo(r.Context(), pc.ProjectID, billID)
+	recipients, err := s.billParticipantIDs(r.Context(), pc.ProjectID, billID)
 	if err != nil {
 		s.logger.Error("bill recipients", "bill_id", billID, "error", err)
 	} else {
-		s.emitBill(recipients, realtime.TypeBillCreated, info)
+		s.emitBill(pc.ProjectID, recipients, realtime.TypeBillCreated, info)
 	}
 
 	writeJSON(w, http.StatusCreated, map[string]int64{"id": billID})
 }
 
-func (s *Server) buildBillPlan(ctx context.Context, payload billPayload) (*billPlan, error) {
+func (s *Server) buildBillPlan(ctx context.Context, projectID int64, payload billPayload) (*billPlan, error) {
 	title := strings.TrimSpace(payload.Title)
 	if title == "" {
 		return nil, badRequestf("Bill title is required")
@@ -196,10 +199,17 @@ func (s *Server) buildBillPlan(ctx context.Context, payload billPayload) (*billP
 		return nil, badRequestf("Too many participants")
 	}
 
+	// The payer must be a member of this project: a bare user id from another
+	// tenant is rejected here rather than silently accepted.
 	var payerActive bool
-	err = s.db.QueryRow(ctx, `SELECT is_active FROM users WHERE id = $1`, payload.PaidByMemberID).Scan(&payerActive)
+	err = s.db.QueryRow(ctx, `
+		SELECT u.is_active
+		FROM users u
+		JOIN project_members pm ON pm.user_id = u.id
+		WHERE u.id = $1 AND pm.project_id = $2`,
+		payload.PaidByMemberID, projectID).Scan(&payerActive)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, badRequestf("Payer does not exist")
+		return nil, badRequestf("Payer is not in this project")
 	}
 	if err != nil {
 		return nil, fmt.Errorf("load payer: %w", err)
@@ -231,11 +241,11 @@ func (s *Server) buildBillPlan(ctx context.Context, payload billPayload) (*billP
 		}
 	}
 
-	members, err := s.loadMemberRefs(ctx, memberIDs)
+	members, err := s.loadMemberRefs(ctx, projectID, memberIDs)
 	if err != nil {
 		return nil, err
 	}
-	groups, err := s.loadResolvedGroups(ctx, groupIDs)
+	groups, err := s.loadResolvedGroups(ctx, projectID, groupIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -286,6 +296,7 @@ func (s *Server) buildBillPlan(ctx context.Context, payload billPayload) (*billP
 	}
 
 	plan := &billPlan{
+		ProjectID:    projectID,
 		Title:        title,
 		Description:  description,
 		TotalCents:   payload.TotalAmountCents,
@@ -356,12 +367,18 @@ func (s *Server) buildBillPlan(ctx context.Context, payload billPayload) (*billP
 	return plan, nil
 }
 
-func (s *Server) loadMemberRefs(ctx context.Context, ids []int64) (map[int64]models.Member, error) {
+func (s *Server) loadMemberRefs(ctx context.Context, projectID int64, ids []int64) (map[int64]models.Member, error) {
 	result := make(map[int64]models.Member, len(ids))
 	if len(ids) == 0 {
 		return result, nil
 	}
-	rows, err := s.db.Query(ctx, `SELECT id, `+userLabelSQL+` AS name, is_active FROM users WHERE id = ANY($1)`, ids)
+	// Joining project_members means a user from another project is simply not
+	// found, so it falls through to the "does not exist" error below.
+	rows, err := s.db.Query(ctx, `
+		SELECT u.id, `+userLabelSQL+` AS name, u.is_active
+		FROM users u
+		JOIN project_members pm ON pm.user_id = u.id AND pm.project_id = $2
+		WHERE u.id = ANY($1)`, ids, projectID)
 	if err != nil {
 		return nil, fmt.Errorf("load members: %w", err)
 	}
@@ -381,13 +398,13 @@ func (s *Server) loadMemberRefs(ctx context.Context, ids []int64) (map[int64]mod
 	}
 	for _, id := range ids {
 		if _, ok := result[id]; !ok {
-			return nil, badRequestf("member #%d does not exist", id)
+			return nil, badRequestf("member #%d is not in this project", id)
 		}
 	}
 	return result, nil
 }
 
-func (s *Server) loadResolvedGroups(ctx context.Context, ids []int64) (map[int64]resolvedGroup, error) {
+func (s *Server) loadResolvedGroups(ctx context.Context, projectID int64, ids []int64) (map[int64]resolvedGroup, error) {
 	result := make(map[int64]resolvedGroup, len(ids))
 	if len(ids) == 0 {
 		return result, nil
@@ -395,7 +412,7 @@ func (s *Server) loadResolvedGroups(ctx context.Context, ids []int64) (map[int64
 
 	rows, err := s.db.Query(ctx, `
 		SELECT id, name, internal_split_type, is_active
-		FROM member_groups WHERE id = ANY($1)`, ids)
+		FROM member_groups WHERE id = ANY($1) AND project_id = $2`, ids, projectID)
 	if err != nil {
 		return nil, fmt.Errorf("load groups: %w", err)
 	}
@@ -419,16 +436,20 @@ func (s *Server) loadResolvedGroups(ctx context.Context, ids []int64) (map[int64
 	}
 	for _, id := range ids {
 		if _, ok := result[id]; !ok {
-			return nil, badRequestf("group #%d does not exist", id)
+			return nil, badRequestf("group #%d is not in this project", id)
 		}
 	}
 
+	// Both sides are scoped: the group must belong to the project, and so must
+	// every member pulled out of it.
 	memberRows, err := s.db.Query(ctx, `
 		SELECT gm.group_id, gm.member_id, `+userLabelSQLM+`, gm.internal_ratio, m.is_active
 		FROM group_members gm
+		JOIN member_groups g ON g.id = gm.group_id AND g.project_id = $2
 		JOIN users m ON m.id = gm.member_id
+		JOIN project_members pm ON pm.user_id = m.id AND pm.project_id = $2
 		WHERE gm.group_id = ANY($1)
-		ORDER BY `+userLabelSQLM+` ASC`, ids)
+		ORDER BY `+userLabelSQLM+` ASC`, ids, projectID)
 	if err != nil {
 		return nil, fmt.Errorf("load group members: %w", err)
 	}
@@ -467,9 +488,9 @@ func (s *Server) storeBill(ctx context.Context, plan *billPlan, attachments []pr
 
 	var billID int64
 	if err := tx.QueryRow(ctx, `
-		INSERT INTO bills (title, description, total_amount_cents, paid_by_member_id, split_mode, status, bill_date)
-		VALUES ($1, $2, $3, $4, $5, 'OPEN', $6) RETURNING id`,
-		plan.Title, plan.Description, plan.TotalCents, plan.PayerID, plan.SplitMode, plan.BillDate,
+		INSERT INTO bills (project_id, title, description, total_amount_cents, paid_by_member_id, split_mode, status, bill_date)
+		VALUES ($1, $2, $3, $4, $5, $6, 'OPEN', $7) RETURNING id`,
+		plan.ProjectID, plan.Title, plan.Description, plan.TotalCents, plan.PayerID, plan.SplitMode, plan.BillDate,
 	).Scan(&billID); err != nil {
 		return 0, err
 	}
@@ -618,6 +639,7 @@ func randomFilename() string {
 }
 
 func (s *Server) handleListBills(w http.ResponseWriter, r *http.Request) {
+	pc, _ := projectFrom(r.Context())
 	rows, err := s.db.Query(r.Context(), `
 		SELECT b.id, b.title, b.description, b.total_amount_cents, b.paid_by_member_id, `+userLabelSQLM+`,
 		       b.split_mode, b.status, b.bill_date, b.created_at,
@@ -625,7 +647,8 @@ func (s *Server) handleListBills(w http.ResponseWriter, r *http.Request) {
 		       (SELECT COUNT(*) FROM bill_participants p WHERE p.bill_id = b.id)
 		FROM bills b
 		JOIN users m ON m.id = b.paid_by_member_id
-		ORDER BY b.bill_date DESC, b.id DESC`)
+		WHERE b.project_id = $1
+		ORDER BY b.bill_date DESC, b.id DESC`, pc.ProjectID)
 	if err != nil {
 		s.logger.Error("list bills", "error", err)
 		writeError(w, http.StatusInternalServerError, "Could not load bills")
@@ -663,8 +686,8 @@ func (s *Server) handleListBills(w http.ResponseWriter, r *http.Request) {
 			FROM bill_member_shares s
 			JOIN users m ON m.id = s.member_id
 			JOIN bills b ON b.id = s.bill_id
-			WHERE s.bill_id = ANY($1)
-			ORDER BY s.id`, ids)
+			WHERE s.bill_id = ANY($1) AND b.project_id = $2
+			ORDER BY s.id`, ids, pc.ProjectID)
 		if err != nil {
 			s.logger.Error("list bill shares", "error", err)
 			writeError(w, http.StatusInternalServerError, "Could not load bills")
@@ -697,7 +720,62 @@ func (s *Server) handleListBills(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, bills)
 }
 
+// resolvePublicProject maps a share slug to a project. A project whose owner has
+// not enabled sharing is treated as absent, so a disabled project is
+// indistinguishable from a nonexistent one.
+func (s *Server) resolvePublicProject(ctx context.Context, slug string) (int64, string, error) {
+	var projectID int64
+	var name string
+	err := s.db.QueryRow(ctx, `
+		SELECT id, name FROM projects
+		WHERE public_slug = $1 AND public_enabled AND is_active`, slug,
+	).Scan(&projectID, &name)
+	return projectID, name, err
+}
+
+// handlePublicProject is the anonymous entry point for a share link: just enough
+// to title the page. No emails, phones or notes ever cross this boundary.
+func (s *Server) handlePublicProject(w http.ResponseWriter, r *http.Request) {
+	projectID, name, err := s.resolvePublicProject(r.Context(), r.PathValue("slug"))
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeError(w, http.StatusNotFound, "Project not found")
+		return
+	}
+	if err != nil {
+		s.logger.Error("resolve public project", "error", err)
+		writeError(w, http.StatusInternalServerError, "Could not load project")
+		return
+	}
+
+	members, err := s.loadProjectMembers(r.Context(), projectID)
+	if err != nil {
+		s.logger.Error("public project members", "error", err)
+		writeError(w, http.StatusInternalServerError, "Could not load project")
+		return
+	}
+	names := make([]string, 0, len(members))
+	for _, m := range members {
+		names = append(names, m.Name)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"name":    name,
+		"members": names,
+	})
+}
+
 func (s *Server) handlePublicListBills(w http.ResponseWriter, r *http.Request) {
+	projectID, _, err := s.resolvePublicProject(r.Context(), r.PathValue("slug"))
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeError(w, http.StatusNotFound, "Project not found")
+		return
+	}
+	if err != nil {
+		s.logger.Error("resolve public project", "error", err)
+		writeError(w, http.StatusInternalServerError, "Could not load bills")
+		return
+	}
+
 	ctx := r.Context()
 	rows, err := s.db.Query(ctx, `
 		SELECT b.id, b.title, b.description, b.total_amount_cents, `+userLabelSQLM+`,
@@ -706,7 +784,8 @@ func (s *Server) handlePublicListBills(w http.ResponseWriter, r *http.Request) {
 		       (SELECT COUNT(*) FROM bill_participants p WHERE p.bill_id = b.id)
 		FROM bills b
 		JOIN users m ON m.id = b.paid_by_member_id
-		ORDER BY b.bill_date DESC, b.id DESC`)
+		WHERE b.project_id = $1
+		ORDER BY b.bill_date DESC, b.id DESC`, projectID)
 	if err != nil {
 		s.logger.Error("list public bills", "error", err)
 		writeError(w, http.StatusInternalServerError, "Could not load bills")
@@ -776,11 +855,22 @@ func (s *Server) handlePublicListBills(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePublicGetBill(w http.ResponseWriter, r *http.Request) {
+	projectID, _, err := s.resolvePublicProject(r.Context(), r.PathValue("slug"))
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeError(w, http.StatusNotFound, "Project not found")
+		return
+	}
+	if err != nil {
+		s.logger.Error("resolve public project", "error", err)
+		writeError(w, http.StatusInternalServerError, "Could not load bill")
+		return
+	}
+
 	id, ok := pathID(w, r, "id")
 	if !ok {
 		return
 	}
-	bill, err := s.loadBill(r.Context(), id)
+	bill, err := s.loadBill(r.Context(), projectID, id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "Bill not found")
 		return
@@ -794,6 +884,7 @@ func (s *Server) handlePublicGetBill(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUpdateBillStatus(w http.ResponseWriter, r *http.Request) {
+	pc, _ := projectFrom(r.Context())
 	id, ok := pathID(w, r, "id")
 	if !ok {
 		return
@@ -820,7 +911,7 @@ func (s *Server) handleUpdateBillStatus(w http.ResponseWriter, r *http.Request) 
 	}
 	defer tx.Rollback(ctx)
 
-	tag, err := tx.Exec(ctx, `UPDATE bills SET status = $1 WHERE id = $2`, status, id)
+	tag, err := tx.Exec(ctx, `UPDATE bills SET status = $1 WHERE id = $2 AND project_id = $3`, status, id, pc.ProjectID)
 	if err != nil {
 		s.logger.Error("update bill status", "error", err)
 		writeError(w, http.StatusInternalServerError, "Could not update bill")
@@ -865,11 +956,11 @@ func (s *Server) handleUpdateBillStatus(w http.ResponseWriter, r *http.Request) 
 	// participant needs to hear about it: the payer's counterparties get the alert,
 	// and the rest of the bill just re-renders.
 	actorID, _ := s.auth.RequestUser(r)
-	info := s.billEventInfo(ctx, id)
+	info := s.billEventInfo(ctx, pc.ProjectID, id)
 	info.ActorID = actorID
 	info.ActorName = s.displayName(ctx, actorID)
 
-	recipients, err := s.billParticipantIDs(ctx, id)
+	recipients, err := s.billParticipantIDs(ctx, pc.ProjectID, id)
 	if err != nil {
 		s.logger.Error("bill recipients", "bill_id", id, "error", err)
 	} else {
@@ -877,19 +968,22 @@ func (s *Server) handleUpdateBillStatus(w http.ResponseWriter, r *http.Request) 
 		if status == "SETTLED" {
 			kind = realtime.TypeBillSettled
 		}
-		s.emitBill(excludingID(recipients, actorID), kind, info)
+		s.emitBill(pc.ProjectID, excludingID(recipients, actorID), kind, info)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": status})
 }
 
 // syncBillStatus recomputes a bill's status from its shares: once every share is
-// settled the bill is SETTLED, and any outstanding share reopens it.
-func (s *Server) syncBillStatus(ctx context.Context, billID int64) (string, error) {
+// settled the bill is SETTLED, and any outstanding share reopens it. The project
+// predicate means a bill id from another tenant cannot be re-rated here.
+func (s *Server) syncBillStatus(ctx context.Context, projectID, billID int64) (string, error) {
 	var total, settled int
 	if err := s.db.QueryRow(ctx, `
-		SELECT COUNT(*), COUNT(*) FILTER (WHERE is_settled)
-		FROM bill_member_shares WHERE bill_id = $1`, billID).Scan(&total, &settled); err != nil {
+		SELECT COUNT(*), COUNT(*) FILTER (WHERE s.is_settled)
+		FROM bill_member_shares s
+		JOIN bills b ON b.id = s.bill_id
+		WHERE s.bill_id = $1 AND b.project_id = $2`, billID, projectID).Scan(&total, &settled); err != nil {
 		return "", fmt.Errorf("count shares: %w", err)
 	}
 
@@ -898,7 +992,8 @@ func (s *Server) syncBillStatus(ctx context.Context, billID int64) (string, erro
 		status = "SETTLED"
 	}
 	if _, err := s.db.Exec(ctx, `
-		UPDATE bills SET status = $1 WHERE id = $2 AND status <> $1`, status, billID); err != nil {
+		UPDATE bills SET status = $1 WHERE id = $2 AND project_id = $3 AND status <> $1`,
+		status, billID, projectID); err != nil {
 		return "", fmt.Errorf("update bill status: %w", err)
 	}
 	return status, nil
@@ -908,6 +1003,7 @@ func (s *Server) syncBillStatus(ctx context.Context, billID int64) (string, erro
 // involved: the debtor may "request" that they have paid (action=request), and the
 // bill's payer approves or rejects it (action=settle / action=reject).
 func (s *Server) handleUpdateShareSettled(w http.ResponseWriter, r *http.Request) {
+	pc, _ := projectFrom(r.Context())
 	billID, ok := pathID(w, r, "id")
 	if !ok {
 		return
@@ -939,7 +1035,8 @@ func (s *Server) handleUpdateShareSettled(w http.ResponseWriter, r *http.Request
 		SELECT b.paid_by_member_id, s.member_id, s.is_settled
 		FROM bill_member_shares s
 		JOIN bills b ON b.id = s.bill_id
-		WHERE s.id = $1 AND s.bill_id = $2`, shareID, billID).Scan(&payerID, &debtorID, &settled)
+		WHERE s.id = $1 AND s.bill_id = $2 AND b.project_id = $3`,
+		shareID, billID, pc.ProjectID).Scan(&payerID, &debtorID, &settled)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "Share not found")
 		return
@@ -981,12 +1078,12 @@ func (s *Server) handleUpdateShareSettled(w http.ResponseWriter, r *http.Request
 		}
 		if _, err := s.db.Exec(ctx, `
 			UPDATE bill_member_shares SET settle_requested_at = now()
-			WHERE id = $1`, shareID); err != nil {
+			WHERE id = $1 AND bill_id = $2`, shareID, billID); err != nil {
 			s.logger.Error("request settlement", "error", err)
 			writeError(w, http.StatusInternalServerError, "Could not request settlement")
 			return
 		}
-		s.notifyShareChange(ctx, billID, payerID, "request", viewerID)
+		s.notifyShareChange(ctx, pc.ProjectID, billID, payerID, "request", viewerID)
 		writeJSON(w, http.StatusOK, map[string]any{"is_settled": false, "requested": true})
 
 	case "settle", "reject", "reopen":
@@ -1000,17 +1097,17 @@ func (s *Server) handleUpdateShareSettled(w http.ResponseWriter, r *http.Request
 		if _, err := s.db.Exec(ctx, `
 			UPDATE bill_member_shares
 			SET is_settled = $1, settle_requested_at = NULL
-			WHERE id = $2`, next, shareID); err != nil {
+			WHERE id = $2 AND bill_id = $3`, next, shareID, billID); err != nil {
 			s.logger.Error("update share settled", "error", err)
 			writeError(w, http.StatusInternalServerError, "Could not update share")
 			return
 		}
 		// The bill is only complete once every share is settled.
-		billStatus, err := s.syncBillStatus(ctx, billID)
+		billStatus, err := s.syncBillStatus(ctx, pc.ProjectID, billID)
 		if err != nil {
 			s.logger.Error("sync bill status", "error", err)
 		}
-		s.notifyShareChange(ctx, billID, debtorID, action, viewerID)
+		s.notifyShareChange(ctx, pc.ProjectID, billID, debtorID, action, viewerID)
 		writeJSON(w, http.StatusOK, map[string]any{"is_settled": next, "requested": false, "bill_status": billStatus})
 
 	default:
@@ -1019,11 +1116,12 @@ func (s *Server) handleUpdateShareSettled(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) handleGetBill(w http.ResponseWriter, r *http.Request) {
+	pc, _ := projectFrom(r.Context())
 	id, ok := pathID(w, r, "id")
 	if !ok {
 		return
 	}
-	bill, err := s.loadBill(r.Context(), id)
+	bill, err := s.loadBill(r.Context(), pc.ProjectID, id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "Bill not found")
 		return
@@ -1036,7 +1134,7 @@ func (s *Server) handleGetBill(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, bill)
 }
 
-func (s *Server) loadBill(ctx context.Context, id int64) (models.Bill, error) {
+func (s *Server) loadBill(ctx context.Context, projectID, id int64) (models.Bill, error) {
 	var bill models.Bill
 	var billDate time.Time
 	err := s.db.QueryRow(ctx, `
@@ -1046,7 +1144,7 @@ func (s *Server) loadBill(ctx context.Context, id int64) (models.Bill, error) {
 		       (SELECT COUNT(*) FROM bill_participants p WHERE p.bill_id = b.id)
 		FROM bills b
 		JOIN users m ON m.id = b.paid_by_member_id
-		WHERE b.id = $1`, id,
+		WHERE b.id = $1 AND b.project_id = $2`, id, projectID,
 	).Scan(&bill.ID, &bill.Title, &bill.Description, &bill.TotalAmountCents,
 		&bill.PaidByMemberID, &bill.PaidByName, &bill.SplitMode, &bill.Status, &billDate, &bill.CreatedAt,
 		&bill.AttachmentCount, &bill.ParticipantCount)
@@ -1141,13 +1239,14 @@ func (s *Server) loadBill(ctx context.Context, id int64) (models.Bill, error) {
 }
 
 func (s *Server) handleDeleteBill(w http.ResponseWriter, r *http.Request) {
+	pc, _ := projectFrom(r.Context())
 	id, ok := pathID(w, r, "id")
 	if !ok {
 		return
 	}
 
 	ctx := r.Context()
-	tag, err := s.db.Exec(ctx, `DELETE FROM bills WHERE id = $1`, id)
+	tag, err := s.db.Exec(ctx, `DELETE FROM bills WHERE id = $1 AND project_id = $2`, id, pc.ProjectID)
 	if err != nil {
 		s.logger.Error("delete bill", "error", err)
 		writeError(w, http.StatusInternalServerError, "Could not delete bill")
@@ -1158,9 +1257,7 @@ func (s *Server) handleDeleteBill(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := os.RemoveAll(filepath.Join(s.cfg.UploadDir, strconv.FormatInt(id, 10))); err != nil {
-		s.logger.Warn("remove bill uploads", "bill_id", id, "error", err)
-	}
+	s.removeBillUploads(id)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -1168,11 +1265,8 @@ func (s *Server) handleDeleteBill(w http.ResponseWriter, r *http.Request) {
 // or shares awaiting their confirmation as the payer) and attaches each bill's full
 // participant breakdown so the dashboard can expand a row.
 func (s *Server) handleSettlements(w http.ResponseWriter, r *http.Request) {
-	viewerID, ok := s.auth.RequestUser(r)
-	if !ok {
-		writeError(w, http.StatusUnauthorized, "Authentication required")
-		return
-	}
+	pc, _ := projectFrom(r.Context())
+	viewerID := pc.UserID
 
 	ctx := r.Context()
 	rows, err := s.db.Query(ctx, `
@@ -1191,7 +1285,8 @@ func (s *Server) handleSettlements(w http.ResponseWriter, r *http.Request) {
 		WHERE ((s.member_id = $1 AND s.is_settled = FALSE)
 		   OR (b.paid_by_member_id = $1 AND s.member_id <> $1 AND s.is_settled = FALSE))
 		  AND b.status <> 'SETTLED'
-		ORDER BY b.bill_date DESC, b.id DESC`, viewerID)
+		  AND b.project_id = $2
+		ORDER BY b.bill_date DESC, b.id DESC`, viewerID, pc.ProjectID)
 	if err != nil {
 		s.logger.Error("list settlements", "error", err)
 		writeError(w, http.StatusInternalServerError, "Could not load settlements")
@@ -1228,8 +1323,8 @@ func (s *Server) handleSettlements(w http.ResponseWriter, r *http.Request) {
 			FROM bill_member_shares s
 			JOIN users m ON m.id = s.member_id
 			JOIN bills b ON b.id = s.bill_id
-			WHERE s.bill_id = ANY($1)
-			ORDER BY s.id`, billIDs)
+			WHERE s.bill_id = ANY($1) AND b.project_id = $2
+			ORDER BY s.id`, billIDs, pc.ProjectID)
 		if err != nil {
 			s.logger.Error("list settlement shares", "error", err)
 			writeError(w, http.StatusInternalServerError, "Could not load settlements")
@@ -1263,26 +1358,32 @@ func (s *Server) handleSettlements(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleBalances(w http.ResponseWriter, r *http.Request) {
+	pc, _ := projectFrom(r.Context())
 
 	// The caller's own row is flagged rather than dropped: the dashboard hides it
 	// from the list but still needs it for the summary counts.
-	viewerID, _ := s.auth.RequestUser(r)
+	viewerID := pc.UserID
 
 	// Only outstanding shares of open bills move money. A member's net is what others
 	// still owe them minus what they still owe. A settled bill owes nothing even if
 	// an old build left its shares flagged open, so the bill status is checked
 	// alongside the per-share flag rather than trusting the flag alone.
+	//
+	// The roster, the credit and the debt subqueries each need the project
+	// predicate: missing the roster leaks names, missing a subquery fakes money.
 	rows, err := s.db.Query(r.Context(), `
 		SELECT m.id, `+userLabelSQLM+`, m.is_active, (m.id = $1) AS is_self,
 		       COALESCE(credit.total, 0)::bigint,
 		       COALESCE(debt.total, 0)::bigint,
 		       (COALESCE(credit.total, 0) - COALESCE(debt.total, 0))::bigint
 		FROM users m
+		JOIN project_members pm ON pm.user_id = m.id AND pm.project_id = $2
 		LEFT JOIN (
 			SELECT b.paid_by_member_id AS member_id, SUM(s.owed_amount_cents) AS total
 			FROM bill_member_shares s
 			JOIN bills b ON b.id = s.bill_id
 			WHERE s.is_settled = FALSE AND b.status <> 'SETTLED'
+			  AND b.project_id = $2
 			  AND s.member_id <> b.paid_by_member_id
 			GROUP BY b.paid_by_member_id
 		) credit ON credit.member_id = m.id
@@ -1291,10 +1392,11 @@ func (s *Server) handleBalances(w http.ResponseWriter, r *http.Request) {
 			FROM bill_member_shares s
 			JOIN bills b ON b.id = s.bill_id
 			WHERE s.is_settled = FALSE AND b.status <> 'SETTLED'
+			  AND b.project_id = $2
 			  AND s.member_id <> b.paid_by_member_id
 			GROUP BY s.member_id
 		) debt ON debt.member_id = m.id
-		ORDER BY `+userLabelSQLM+` ASC`, viewerID)
+		ORDER BY `+userLabelSQLM+` ASC`, viewerID, pc.ProjectID)
 	if err != nil {
 		s.logger.Error("load balances", "error", err)
 		writeError(w, http.StatusInternalServerError, "Could not load balances")

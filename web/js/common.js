@@ -3,13 +3,44 @@
 (typeof I18n !== "undefined" ? I18n.init() : null);
 
 const Chrome = (() => {
+  // Current project is derived from the URL (/p/<id>/...). One tab can show a
+  // different project from another, which is why it is not stored globally.
+  function currentProjectID() {
+    const match = window.location.pathname.match(/^\/p\/(\d+)(?:\/|$)/);
+    return match ? Number(match[1]) : 0;
+  }
+
+  // projectURL builds an in-app link under the current project.
+  function projectURL(path) {
+    const id = currentProjectID();
+    return id ? `/p/${id}${path}` : path;
+  }
+
+  // rewriteLinks points the shared header nav at the current project. The nav
+  // markup is duplicated across pages, so doing it here keeps one source of
+  // truth instead of editing every HTML file.
+  function rewriteLinks() {
+    const id = currentProjectID();
+    if (!id) return;
+    document.querySelectorAll("[data-nav], .brand, [data-project-link]").forEach((link) => {
+      const href = link.getAttribute("href") || "";
+      if (!href.startsWith("/") || href.startsWith("/p/") || href.startsWith("/share/")) return;
+      link.setAttribute("href", `/p/${id}${href === "/" ? "/dashboard.html" : href}`);
+    });
+  }
+
   function markActiveNav() {
     const here = window.location.pathname.replace(/\/$/, "") || "/";
     document.querySelectorAll("[data-nav]").forEach((link) => {
-      const target = (link.getAttribute("href") || "").replace(/\/$/, "") || "/";
-      if (target === here) {
-        link.classList.add("active");
+      // Compare full paths, and also treat /admin and /admin/index.html as one.
+      const target = (link.getAttribute("href") || "").replace(/\/$/, "").replace("/index.html", "") || "/";
+      const hereNormalized = here.replace("/index.html", "");
+      const active = target === hereNormalized;
+      link.classList.toggle("active", active);
+      if (active) {
         link.setAttribute("aria-current", "page");
+      } else {
+        link.removeAttribute("aria-current");
       }
     });
   }
@@ -79,6 +110,136 @@ const Chrome = (() => {
     }
   }
 
+  // --- project pane ---------------------------------------------------------
+
+  const PANE_KEY = "bs.pane.collapsed";
+
+  // mountProjectPane injects the collapsible left pane listing every project
+  // plus a create button. It is built here rather than in each HTML file because
+  // the page shell is duplicated across six documents.
+  function mountProjectPane(projects) {
+    const main = document.querySelector("main.main");
+    if (!main || document.getElementById("project-pane")) return;
+
+    const currentId = currentProjectID();
+
+    const aside = document.createElement("aside");
+    aside.className = "project-pane";
+    aside.id = "project-pane";
+    aside.setAttribute("aria-label", I18n.t("projects.title"));
+
+    const head = UI.el("div", "pane-head");
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "pane-toggle icon-btn";
+    toggle.dataset.icon = "chevron-right";
+    toggle.setAttribute("aria-expanded", "false");
+    toggle.setAttribute("aria-controls", "project-pane-list");
+    toggle.title = I18n.t("projects.collapse");
+
+    const title = UI.el("span", "pane-title", I18n.t("projects.title"));
+
+    const addBtn = document.createElement("button");
+    addBtn.type = "button";
+    addBtn.className = "pane-add icon-btn";
+    addBtn.dataset.icon = "plus";
+    addBtn.title = I18n.t("projects.new");
+    addBtn.setAttribute("aria-label", I18n.t("projects.new"));
+
+    head.appendChild(toggle);
+    head.appendChild(title);
+    head.appendChild(addBtn);
+    aside.appendChild(head);
+
+    const list = UI.el("ul", "pane-list");
+    list.id = "project-pane-list";
+    if (projects.length === 0) {
+      list.appendChild(UI.el("li", "pane-empty", I18n.t("projects.empty")));
+    }
+    for (const project of projects) {
+      const item = document.createElement("li");
+      const link = document.createElement("a");
+      link.className = "pane-link";
+      link.href = `/p/${project.id}/dashboard.html`;
+      if (project.id === currentId) {
+        link.classList.add("active");
+        link.setAttribute("aria-current", "page");
+      }
+      link.appendChild(UI.el("span", "pane-name", project.name));
+      if (project.role === "owner") {
+        link.appendChild(UI.el("span", "pane-role", I18n.t("projects.owner")));
+      }
+      item.appendChild(link);
+      list.appendChild(item);
+    }
+    aside.appendChild(list);
+
+    // Wrap existing page content so the pane can sit beside it without touching
+    // markup that pages already put directly inside <main>.
+    const content = document.createElement("div");
+    content.className = "main-content";
+    while (main.firstChild) content.appendChild(main.firstChild);
+    main.appendChild(aside);
+    main.appendChild(content);
+    main.classList.add("main-layout");
+
+    Icons.apply(aside);
+
+    const setCollapsed = (collapsed) => {
+      document.body.classList.toggle("pane-collapsed", collapsed);
+      toggle.setAttribute("aria-expanded", String(!collapsed));
+      try {
+        window.localStorage.setItem(PANE_KEY, collapsed ? "1" : "0");
+      } catch (err) {
+        /* private mode: the choice just does not persist */
+      }
+    };
+
+    let stored = "0";
+    try {
+      stored = window.localStorage.getItem(PANE_KEY) || "0";
+    } catch (err) {
+      /* ignore */
+    }
+    if (stored === "1") setCollapsed(true);
+
+    toggle.addEventListener("click", () => {
+      setCollapsed(!document.body.classList.contains("pane-collapsed"));
+    });
+
+    addBtn.addEventListener("click", () => promptNewProject());
+
+    // On narrow screens the pane is off-canvas; a tap outside closes it.
+    document.addEventListener("click", (event) => {
+      if (window.innerWidth > 820) return;
+      if (!aside.contains(event.target) && !aside.classList.contains("hidden")) {
+        aside.classList.remove("open");
+      }
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") aside.classList.remove("open");
+    });
+
+    if (window.innerWidth <= 820) {
+      toggle.addEventListener("click", () => aside.classList.toggle("open"));
+    }
+  }
+
+  // promptNewProject asks for a name and creates the project, then navigates
+  // into it so the user lands somewhere useful.
+  async function promptNewProject() {
+    const name = window.prompt(I18n.t("projects.newPrompt"));
+    if (name === null) return;
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    try {
+      const project = await API.createProject(trimmed);
+      window.location.href = `/p/${project.id}/dashboard.html`;
+    } catch (err) {
+      UI.toast(UI.errorMessage(err), "error");
+    }
+  }
+
   // startRealtime opens the event stream and forwards every event to the
   // current page's `Chrome.onRealtime` hook, if it has one. Pages that do not
   // opt in still get the notification bell.
@@ -100,8 +261,9 @@ const Chrome = (() => {
       if (err.status === 401) return;
     }
     let authenticated = false;
+    let session = null;
     if (typeof I18n !== "undefined") {
-      const session = await API.currentSession();
+      session = await API.currentSession();
       authenticated = session !== null;
       if (session && session.language) {
         I18n.useDefault(session.language);
@@ -109,12 +271,17 @@ const Chrome = (() => {
       }
       I18n.onChange(() => rerender());
     }
+    rewriteLinks();
     markActiveNav();
     mountNavToggle();
     wireLogout();
     Icons.apply();
-    // Only signed-in pages get the bell and the event stream; the public bill
-    // list is anonymous and its socket would be rejected anyway.
+    // The pane needs the project list, which the session already carries.
+    if (authenticated && session) {
+      mountProjectPane(session.projects || []);
+    }
+    // Only signed-in pages get the bell and the event stream; the public share
+    // page is anonymous and its socket would be rejected anyway.
     if (authenticated) startRealtime();
     if (opts.onReady) {
       try {
@@ -127,7 +294,7 @@ const Chrome = (() => {
     }
   }
 
-  return { start };
+  return { start, currentProjectID, projectURL };
 })();
 
 const Rows = (() => {

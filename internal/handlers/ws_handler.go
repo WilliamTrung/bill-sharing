@@ -10,9 +10,12 @@ import (
 
 // handleWebSocket upgrades an authenticated request into a long-lived event
 // stream. The session cookie is the only credential, exactly as for the REST
-// API, so there is no separate token scheme to secure.
+// API, so there is no separate token scheme to secure. The route is project
+// scoped, so the client also proves it belongs to the project it is listening
+// for; events still carry their own project id because one user may have tabs
+// open on different projects.
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
-	userID, ok := s.auth.RequestUser(r)
+	pc, ok := projectFrom(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "Authentication required")
 		return
@@ -30,9 +33,9 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.logger.Info("websocket connected", "user_id", userID)
-	s.hub.Serve(r.Context(), realtime.NewClient(userID, conn))
-	s.logger.Info("websocket disconnected", "user_id", userID)
+	s.logger.Info("websocket connected", "user_id", pc.UserID, "project_id", pc.ProjectID)
+	s.hub.Serve(r.Context(), realtime.NewClient(pc.UserID, pc.ProjectID, conn))
+	s.logger.Info("websocket disconnected", "user_id", pc.UserID, "project_id", pc.ProjectID)
 }
 
 // publicHost extracts the bare host from the configured public base URL so it
