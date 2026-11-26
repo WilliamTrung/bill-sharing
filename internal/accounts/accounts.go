@@ -65,11 +65,20 @@ func EnsureSeed(ctx context.Context, pool *pgxpool.Pool, username, email, passwo
 const userColumns = `id, username, email, display_name, phone, notes, avatar_color, is_active,
 	(password_hash IS NOT NULL) AS has_password, is_public, language, created_at, updated_at`
 
+// userDest returns the scan destinations for userColumns. Every query that
+// selects userColumns must scan through this, so adding a column can never
+// leave one call site with a mismatched destination list.
+func userDest(u *models.User) []any {
+	return []any{
+		&u.ID, &u.Username, &u.Email, &u.DisplayName, &u.Phone, &u.Notes,
+		&u.AvatarColor, &u.IsActive, &u.HasPassword, &u.IsPublic, &u.Language,
+		&u.CreatedAt, &u.UpdatedAt,
+	}
+}
+
 func scanUser(row pgx.Row) (models.User, error) {
 	var user models.User
-	err := row.Scan(&user.ID, &user.Username, &user.Email, &user.DisplayName, &user.Phone,
-		&user.Notes, &user.AvatarColor, &user.IsActive, &user.HasPassword, &user.IsPublic,
-		&user.Language, &user.CreatedAt, &user.UpdatedAt)
+	err := row.Scan(userDest(&user)...)
 	return user, err
 }
 
@@ -176,9 +185,7 @@ func Activate(ctx context.Context, pool *pgxpool.Pool, userID int64, password st
 		UPDATE users SET password_hash = $1, updated_at = now()
 		WHERE id = $2 AND password_hash IS NULL AND is_active
 		RETURNING `+userColumns, hash, userID,
-	).Scan(&user.ID, &user.Username, &user.Email, &user.DisplayName, &user.Phone,
-		&user.Notes, &user.AvatarColor, &user.IsActive, &user.HasPassword, &user.Language,
-		&user.CreatedAt, &user.UpdatedAt)
+	).Scan(userDest(&user)...)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return models.User{}, ErrInvalidCredentials
 	}
@@ -195,7 +202,7 @@ func Authenticate(ctx context.Context, pool *pgxpool.Pool, identifier, password 
 	}
 
 	var user models.User
-	var hash string
+	var hash *string
 	err := pool.QueryRow(ctx, `
 		SELECT id, username, email, password_hash, is_active, created_at, updated_at
 		FROM users
@@ -209,7 +216,9 @@ func Authenticate(ctx context.Context, pool *pgxpool.Pool, identifier, password 
 	if err != nil {
 		return models.User{}, fmt.Errorf("load user: %w", err)
 	}
-	if hash == "" || !verifyPassword(hash, password) || !user.IsActive {
+	// A password-less account (a member who never activated) has a NULL hash; it
+	// must read as bad credentials, not a server error.
+	if hash == nil || *hash == "" || !verifyPassword(*hash, password) || !user.IsActive {
 		return models.User{}, ErrInvalidCredentials
 	}
 	return user, nil
