@@ -472,3 +472,175 @@ const UI = (() => {
 
   return { toast, avatar, initials, el, escapeHTML, isActive, formatDate, todayISO, errorMessage, debounce };
 })();
+
+// In-app replacement for the browser's alert/confirm/prompt dialogs. It reuses
+// the .modal shell, so the pane looks like the rest of the app, and the action
+// buttons are icon-only (check/x/trash) with their label exposed as a tooltip.
+const Popup = (() => {
+  let overlay = null;
+  let card = null;
+  let nodes = null;
+  let settle = null;
+  let mode = "confirm";
+  let previousFocus = null;
+
+  function t(key) {
+    return typeof I18n !== "undefined" ? I18n.t(key) : key;
+  }
+
+  function build() {
+    if (overlay) return;
+
+    overlay = UI.el("div", "modal popup");
+    overlay.setAttribute("role", "dialog");
+    overlay.setAttribute("aria-modal", "true");
+    overlay.setAttribute("aria-labelledby", "popup-title");
+
+    card = UI.el("div", "modal-card popup-card");
+
+    const head = UI.el("div", "modal-head popup-head");
+    const titles = UI.el("div", "popup-titles");
+    const title = UI.el("h2", "popup-title");
+    title.id = "popup-title";
+    const message = UI.el("div", "popup-message muted");
+    titles.appendChild(title);
+    titles.appendChild(message);
+
+    const closeBtn = UI.el("button", "icon-btn");
+    closeBtn.type = "button";
+    closeBtn.dataset.icon = "x";
+    closeBtn.addEventListener("click", cancel);
+    head.appendChild(titles);
+    head.appendChild(closeBtn);
+
+    const body = UI.el("div", "modal-body popup-body");
+    const field = UI.el("div", "field popup-field");
+    const label = document.createElement("label");
+    label.setAttribute("for", "popup-input");
+    const input = document.createElement("input");
+    input.id = "popup-input";
+    input.type = "text";
+    input.autocomplete = "off";
+    input.maxLength = 200;
+    field.appendChild(label);
+    field.appendChild(input);
+    body.appendChild(field);
+
+    const foot = UI.el("div", "modal-foot popup-foot");
+    const cancelBtn = UI.el("button", "btn btn-ghost btn-icon");
+    cancelBtn.type = "button";
+    cancelBtn.dataset.icon = "x";
+    cancelBtn.addEventListener("click", cancel);
+
+    const confirmBtn = UI.el("button", "btn btn-icon");
+    confirmBtn.type = "button";
+    confirmBtn.dataset.icon = "check";
+    confirmBtn.addEventListener("click", submit);
+
+    foot.appendChild(cancelBtn);
+    foot.appendChild(confirmBtn);
+
+    card.appendChild(head);
+    card.appendChild(body);
+    card.appendChild(foot);
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+
+    nodes = { title, message, field, label, input, cancelBtn, confirmBtn, closeBtn };
+
+    overlay.addEventListener("click", (event) => {
+      if (event.target === overlay) cancel();
+    });
+    document.addEventListener("keydown", (event) => {
+      if (!overlay.classList.contains("open")) return;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        cancel();
+      } else if (event.key === "Enter" && event.target === input) {
+        event.preventDefault();
+        submit();
+      }
+    });
+  }
+
+  function decorate(button, name) {
+    button.dataset.icon = name;
+    delete button.dataset.iconReady;
+    const svg = button.querySelector("svg");
+    if (svg) svg.remove();
+  }
+
+  function setLabel(button, label) {
+    button.setAttribute("aria-label", label);
+    button.title = label;
+  }
+
+  function submit() {
+    if (!settle) return;
+    finish(mode === "prompt" ? nodes.input.value : true);
+  }
+
+  function cancel() {
+    if (!settle) return;
+    finish(mode === "prompt" ? null : false);
+  }
+
+  function finish(value) {
+    if (!settle) return;
+    const done = settle;
+    settle = null;
+    overlay.classList.remove("open");
+    if (previousFocus && typeof previousFocus.focus === "function") {
+      previousFocus.focus();
+    }
+    previousFocus = null;
+    done(value);
+  }
+
+  function show(options) {
+    build();
+    const opts = options || {};
+    mode = opts.mode || "confirm";
+    const isPrompt = mode === "prompt";
+
+    nodes.title.textContent = opts.title || "";
+    nodes.message.textContent = opts.message || "";
+    nodes.message.classList.toggle("hidden", !opts.message);
+
+    nodes.field.classList.toggle("hidden", !isPrompt);
+    nodes.label.textContent = opts.label || "";
+    nodes.input.value = opts.value || "";
+    nodes.input.placeholder = opts.placeholder || "";
+
+    const confirmLabel = opts.confirmLabel || t("action.confirm");
+    decorate(nodes.confirmBtn, opts.icon || "check");
+    decorate(nodes.cancelBtn, "x");
+    decorate(nodes.closeBtn, "x");
+    nodes.confirmBtn.className = `btn btn-icon ${opts.tone === "danger" ? "btn-danger" : ""}`.trim();
+    setLabel(nodes.confirmBtn, confirmLabel);
+    setLabel(nodes.cancelBtn, t("action.cancel"));
+    setLabel(nodes.closeBtn, t("action.close"));
+    if (typeof Icons !== "undefined") Icons.apply(card);
+
+    previousFocus = document.activeElement;
+    overlay.classList.add("open");
+
+    return new Promise((resolve) => {
+      settle = resolve;
+      const focusTarget = isPrompt ? nodes.input : nodes.confirmBtn;
+      requestAnimationFrame(() => focusTarget.focus());
+    });
+  }
+
+  function confirm(options) {
+    return show({ ...options, mode: "confirm" }).then((result) => result === true);
+  }
+
+  function prompt(options) {
+    return show({ ...options, mode: "prompt" }).then((result) =>
+      typeof result === "string" ? result : null
+    );
+  }
+
+  return { confirm, prompt };
+})();

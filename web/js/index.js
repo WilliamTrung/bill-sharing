@@ -170,9 +170,15 @@
 
   async function actOnShare(item, action) {
     if (action === "settle") {
-      const ok = window.confirm(
-        I18n.t("detail.confirmSettle", { name: item.counterparty_name, amount: Money.format(item.owed_amount_cents) })
-      );
+      const ok = await Popup.confirm({
+        title: I18n.t("detail.shareMarkSettled"),
+        message: I18n.t("detail.confirmSettle", {
+          name: item.counterparty_name,
+          amount: Money.format(item.owed_amount_cents),
+        }),
+        confirmLabel: I18n.t("detail.shareMarkSettled"),
+        icon: "check",
+      });
       if (!ok) return;
     }
     try {

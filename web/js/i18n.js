@@ -22,6 +22,8 @@ const I18n = (() => {
 
     "action.cancel": "Cancel",
     "action.close": "Close",
+    "action.confirm": "Confirm",
+    "action.create": "Create",
     "action.edit": "Edit",
     "action.details": "Details",
     "action.addBill": "Add bill",
@@ -402,6 +404,8 @@ const I18n = (() => {
 
     "action.cancel": "Huỷ",
     "action.close": "Đóng",
+    "action.confirm": "Xác nhận",
+    "action.create": "Tạo",
     "action.edit": "Sửa",
     "action.details": "Chi tiết",
     "action.addBill": "Thêm hoá đơn",

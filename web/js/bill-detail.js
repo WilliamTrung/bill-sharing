@@ -328,9 +328,15 @@
 
   async function shareAction(share, action) {
     if (action === "settle") {
-      const confirmed = window.confirm(
-        I18n.t("detail.confirmSettle", { name: share.member_name, amount: Money.format(share.owed_amount_cents) })
-      );
+      const confirmed = await Popup.confirm({
+        title: I18n.t("detail.shareMarkSettled"),
+        message: I18n.t("detail.confirmSettle", {
+          name: share.member_name,
+          amount: Money.format(share.owed_amount_cents),
+        }),
+        confirmLabel: I18n.t("detail.shareMarkSettled"),
+        icon: "check",
+      });
       if (!confirmed) return;
     }
     try {
@@ -364,7 +370,13 @@
 
   async function removeBill() {
     const bill = cache.bill;
-    const confirmed = window.confirm(I18n.t("detail.confirmDelete", { title: bill.title }));
+    const confirmed = await Popup.confirm({
+      title: I18n.t("detail.deleteBill"),
+      message: I18n.t("detail.confirmDelete", { title: bill.title }),
+      confirmLabel: I18n.t("detail.deleteBill"),
+      icon: "trash",
+      tone: "danger",
+    });
     if (!confirmed) return;
 
     deleteBtn.disabled = true;

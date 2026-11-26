@@ -43,7 +43,12 @@
   }
 
   async function createProject() {
-    const name = window.prompt(I18n.t("projects.newPrompt"));
+    const name = await Popup.prompt({
+      title: I18n.t("projects.new"),
+      label: I18n.t("projects.newPrompt"),
+      confirmLabel: I18n.t("action.create"),
+      icon: "plus",
+    });
     if (name === null) return;
     const trimmed = name.trim();
     if (!trimmed) return;

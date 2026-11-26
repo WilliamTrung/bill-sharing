@@ -1342,6 +1342,52 @@ textarea {
   justify-content: flex-end;
 }
 
+/* Popup pane: the in-app stand-in for alert/confirm/prompt dialogs. */
+.popup-card {
+  width: min(420px, 96vw);
+}
+
+.popup-head {
+  align-items: flex-start;
+  padding: 20px 22px 0;
+}
+
+.popup-titles {
+  display: grid;
+  gap: 6px;
+}
+
+.popup-title {
+  font-size: 1.05rem;
+}
+
+.popup-message {
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.popup-body {
+  padding: 16px 22px 4px;
+}
+
+.popup-field label {
+  display: block;
+}
+
+.popup-foot {
+  padding: 10px 22px 20px;
+}
+
+.popup-foot .btn-icon {
+  padding: 10px;
+}
+
+.popup-foot .btn-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
 .icon-btn {
   border: 0;
   background: transparent;
