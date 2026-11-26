@@ -3,6 +3,7 @@ module github.com/WilliamTrung/bill-sharing
 go 1.23
 
 require (
+	github.com/coder/websocket v1.8.15
 	github.com/jackc/pgx/v5 v5.7.2
 	golang.org/x/crypto v0.31.0
 )

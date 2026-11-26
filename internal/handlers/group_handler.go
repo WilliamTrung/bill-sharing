@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/WilliamTrung/bill-sharing/internal/models"
+	"github.com/WilliamTrung/bill-sharing/internal/realtime"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -161,6 +162,10 @@ func (s *Server) handleCreateGroup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "Could not load group")
 		return
 	}
+
+	// Every member should learn they were added and refresh their participant list.
+	s.notifyGroupMembers(ctx, group, realtime.TypeGroupCreated)
+
 	writeJSON(w, http.StatusCreated, group)
 }
 
@@ -288,6 +293,9 @@ func (s *Server) handleUpdateGroup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "Could not load group")
 		return
 	}
+
+	s.notifyGroupMembers(ctx, group, realtime.TypeGroupUpdated)
+
 	writeJSON(w, http.StatusOK, group)
 }
 

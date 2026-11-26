@@ -548,5 +548,11 @@
     saveGroup();
   });
 
+  Chrome.onRealtime = (event) => {
+    // Groups drive both the group cards and each member's group pills, so a
+    // group change refetches everything this page shows.
+    if (event.type === "socket.open" || event.group) loadAll().catch(() => {});
+  };
+
   Chrome.start({ onReady: loadAll });
 })();

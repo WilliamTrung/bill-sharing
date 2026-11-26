@@ -719,6 +719,25 @@
     updateCurrencyLabel();
   };
 
+  // Realtime: a new or changed group (or member) should appear in the picker
+  // without losing the bill being written. Only the participants list and the
+  // preview are rebuilt — never the payer or the form fields.
+  const refreshParticipants = UI.debounce(async () => {
+    try {
+      const [members, groups] = await Promise.all([API.listMembers(), API.listGroups()]);
+      state.members = members;
+      state.groups = groups;
+      renderParticipants();
+      renderPreview();
+    } catch (err) {
+      /* keep the current list if the background refresh fails */
+    }
+  }, 250);
+
+  Chrome.onRealtime = (event) => {
+    if (event.type === "socket.open" || event.group) refreshParticipants();
+  };
+
   Chrome.start({
     async onReady() {
       await load();

@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/WilliamTrung/bill-sharing/internal/models"
+	"github.com/WilliamTrung/bill-sharing/internal/realtime"
 	"github.com/WilliamTrung/bill-sharing/internal/service"
 	"github.com/jackc/pgx/v5"
 )
@@ -142,6 +143,15 @@ func (s *Server) handleCreateBill(w http.ResponseWriter, r *http.Request) {
 		s.logger.Error("create bill", "error", err)
 		writeError(w, http.StatusInternalServerError, "Could not create bill")
 		return
+	}
+
+	// Tell every participant the bill exists so their list and detail views update.
+	info := s.billEventInfo(r.Context(), billID)
+	recipients, err := s.billParticipantIDs(r.Context(), billID)
+	if err != nil {
+		s.logger.Error("bill recipients", "bill_id", billID, "error", err)
+	} else {
+		s.emitBill(recipients, realtime.TypeBillCreated, info)
 	}
 
 	writeJSON(w, http.StatusCreated, map[string]int64{"id": billID})
@@ -801,7 +811,16 @@ func (s *Server) handleUpdateBillStatus(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	tag, err := s.db.Exec(r.Context(), `UPDATE bills SET status = $1 WHERE id = $2`, status, id)
+	ctx := r.Context()
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		s.logger.Error("update bill status", "error", err)
+		writeError(w, http.StatusInternalServerError, "Could not update bill")
+		return
+	}
+	defer tx.Rollback(ctx)
+
+	tag, err := tx.Exec(ctx, `UPDATE bills SET status = $1 WHERE id = $2`, status, id)
 	if err != nil {
 		s.logger.Error("update bill status", "error", err)
 		writeError(w, http.StatusInternalServerError, "Could not update bill")
@@ -811,6 +830,56 @@ func (s *Server) handleUpdateBillStatus(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusNotFound, "Bill not found")
 		return
 	}
+
+	// Keep shares in step with the status: settling the bill settles every share
+	// (clearing it from balances and "To settle"), reopening reopens the debts. The
+	// payer's own share stays settled — they already covered it.
+	var shareErr error
+	if status == "SETTLED" {
+		_, shareErr = tx.Exec(ctx, `
+			UPDATE bill_member_shares SET is_settled = TRUE, settle_requested_at = NULL
+			WHERE bill_id = $1`, id)
+	} else {
+		_, shareErr = tx.Exec(ctx, `
+			UPDATE bill_member_shares s SET is_settled = FALSE, settle_requested_at = NULL
+			FROM bills b
+			WHERE b.id = s.bill_id AND s.bill_id = $1
+			  AND s.member_id <> b.paid_by_member_id
+			  AND NOT (s.source_group_id IS NOT NULL AND EXISTS (
+			      SELECT 1 FROM group_members gm
+			      WHERE gm.group_id = s.source_group_id AND gm.member_id = b.paid_by_member_id
+			  ))`, id)
+	}
+	if shareErr != nil {
+		s.logger.Error("sync bill shares", "error", shareErr)
+		writeError(w, http.StatusInternalServerError, "Could not update bill")
+		return
+	}
+	if err := tx.Commit(ctx); err != nil {
+		s.logger.Error("commit bill status", "error", err)
+		writeError(w, http.StatusInternalServerError, "Could not update bill")
+		return
+	}
+
+	// Marking the whole bill settled (or reopening it) moves every share, so every
+	// participant needs to hear about it: the payer's counterparties get the alert,
+	// and the rest of the bill just re-renders.
+	actorID, _ := s.auth.RequestUser(r)
+	info := s.billEventInfo(ctx, id)
+	info.ActorID = actorID
+	info.ActorName = s.displayName(ctx, actorID)
+
+	recipients, err := s.billParticipantIDs(ctx, id)
+	if err != nil {
+		s.logger.Error("bill recipients", "bill_id", id, "error", err)
+	} else {
+		kind := realtime.TypeBillUpdated
+		if status == "SETTLED" {
+			kind = realtime.TypeBillSettled
+		}
+		s.emitBill(excludingID(recipients, actorID), kind, info)
+	}
+
 	writeJSON(w, http.StatusOK, map[string]string{"status": status})
 }
 
@@ -917,6 +986,7 @@ func (s *Server) handleUpdateShareSettled(w http.ResponseWriter, r *http.Request
 			writeError(w, http.StatusInternalServerError, "Could not request settlement")
 			return
 		}
+		s.notifyShareChange(ctx, billID, payerID, "request", viewerID)
 		writeJSON(w, http.StatusOK, map[string]any{"is_settled": false, "requested": true})
 
 	case "settle", "reject", "reopen":
@@ -940,6 +1010,7 @@ func (s *Server) handleUpdateShareSettled(w http.ResponseWriter, r *http.Request
 		if err != nil {
 			s.logger.Error("sync bill status", "error", err)
 		}
+		s.notifyShareChange(ctx, billID, debtorID, action, viewerID)
 		writeJSON(w, http.StatusOK, map[string]any{"is_settled": next, "requested": false, "bill_status": billStatus})
 
 	default:
@@ -1117,8 +1188,9 @@ func (s *Server) handleSettlements(w http.ResponseWriter, r *http.Request) {
 		FROM bill_member_shares s
 		JOIN bills b ON b.id = s.bill_id
 		JOIN users m ON m.id = s.member_id
-		WHERE (s.member_id = $1 AND s.is_settled = FALSE)
-		   OR (b.paid_by_member_id = $1 AND s.member_id <> $1 AND s.is_settled = FALSE)
+		WHERE ((s.member_id = $1 AND s.is_settled = FALSE)
+		   OR (b.paid_by_member_id = $1 AND s.member_id <> $1 AND s.is_settled = FALSE))
+		  AND b.status <> 'SETTLED'
 		ORDER BY b.bill_date DESC, b.id DESC`, viewerID)
 	if err != nil {
 		s.logger.Error("list settlements", "error", err)
@@ -1196,20 +1268,32 @@ func (s *Server) handleBalances(w http.ResponseWriter, r *http.Request) {
 	// from the list but still needs it for the summary counts.
 	viewerID, _ := s.auth.RequestUser(r)
 
+	// Only outstanding shares of open bills move money. A member's net is what others
+	// still owe them minus what they still owe. A settled bill owes nothing even if
+	// an old build left its shares flagged open, so the bill status is checked
+	// alongside the per-share flag rather than trusting the flag alone.
 	rows, err := s.db.Query(r.Context(), `
 		SELECT m.id, `+userLabelSQLM+`, m.is_active, (m.id = $1) AS is_self,
-		       COALESCE(p.total, 0)::bigint,
-		       COALESCE(s.total, 0)::bigint,
-		       (COALESCE(p.total, 0) - COALESCE(s.total, 0))::bigint
+		       COALESCE(credit.total, 0)::bigint,
+		       COALESCE(debt.total, 0)::bigint,
+		       (COALESCE(credit.total, 0) - COALESCE(debt.total, 0))::bigint
 		FROM users m
 		LEFT JOIN (
-			SELECT paid_by_member_id AS member_id, SUM(total_amount_cents) AS total
-			FROM bills GROUP BY paid_by_member_id
-		) p ON p.member_id = m.id
+			SELECT b.paid_by_member_id AS member_id, SUM(s.owed_amount_cents) AS total
+			FROM bill_member_shares s
+			JOIN bills b ON b.id = s.bill_id
+			WHERE s.is_settled = FALSE AND b.status <> 'SETTLED'
+			  AND s.member_id <> b.paid_by_member_id
+			GROUP BY b.paid_by_member_id
+		) credit ON credit.member_id = m.id
 		LEFT JOIN (
-			SELECT member_id, SUM(owed_amount_cents) AS total
-			FROM bill_member_shares GROUP BY member_id
-		) s ON s.member_id = m.id
+			SELECT s.member_id, SUM(s.owed_amount_cents) AS total
+			FROM bill_member_shares s
+			JOIN bills b ON b.id = s.bill_id
+			WHERE s.is_settled = FALSE AND b.status <> 'SETTLED'
+			  AND s.member_id <> b.paid_by_member_id
+			GROUP BY s.member_id
+		) debt ON debt.member_id = m.id
 		ORDER BY `+userLabelSQLM+` ASC`, viewerID)
 	if err != nil {
 		s.logger.Error("load balances", "error", err)

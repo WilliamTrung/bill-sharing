@@ -154,3 +154,14 @@ DO $$ BEGIN
 END $$;
 
 UPDATE users SET display_name = username WHERE display_name = '' AND username <> '';
+
+-- Repair bills settled by an older build, which set only bills.status and left the
+-- shares flagged open. Those rows kept showing up in balances and "To settle" as
+-- money still owed, so bring the shares in line with the bill status. Idempotent:
+-- once a bill's shares are settled this matches nothing.
+UPDATE bill_member_shares s
+SET is_settled = TRUE, settle_requested_at = NULL
+FROM bills b
+WHERE b.id = s.bill_id
+  AND b.status = 'SETTLED'
+  AND (s.is_settled = FALSE OR s.settle_requested_at IS NOT NULL);

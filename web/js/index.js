@@ -258,6 +258,33 @@
 
   Chrome.onLanguageChange = renderAll;
 
+  // Realtime: refetch on any bill event so the lists, balances and settlements
+  // reflect someone else's change without a manual reload. Debounced because a
+  // single save can emit to several recipients at once.
+  const refresh = UI.debounce(async () => {
+    try {
+      const [bills, balances, settlements] = await Promise.all([
+        API.listBills(),
+        API.balances(),
+        API.settlements(),
+      ]);
+      cache.bills = bills;
+      cache.balances = balances;
+      cache.settlements = settlements;
+      renderAll();
+    } catch (err) {
+      /* a failed background refresh should stay quiet */
+    }
+  }, 250);
+
+  Chrome.onRealtime = (event) => {
+    if (event.type === "socket.open") {
+      refresh();
+      return;
+    }
+    if (event.bill) refresh();
+  };
+
   Chrome.start({
     async onReady() {
       const [bills, balances, settlements] = await Promise.all([

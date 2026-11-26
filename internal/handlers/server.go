@@ -14,6 +14,7 @@ import (
 	"github.com/WilliamTrung/bill-sharing/internal/auth"
 	"github.com/WilliamTrung/bill-sharing/internal/config"
 	"github.com/WilliamTrung/bill-sharing/internal/mail"
+	"github.com/WilliamTrung/bill-sharing/internal/realtime"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -26,6 +27,7 @@ type Server struct {
 	webFS   fs.FS
 	mux     *http.ServeMux
 	limiter *loginLimiter
+	hub     *realtime.Hub
 }
 
 func New(cfg config.Config, db *pgxpool.Pool, logger *slog.Logger, webFS fs.FS) *Server {
@@ -45,6 +47,7 @@ func New(cfg config.Config, db *pgxpool.Pool, logger *slog.Logger, webFS fs.FS) 
 		webFS:   webFS,
 		mux:     http.NewServeMux(),
 		limiter: newLoginLimiter(8, 10*time.Minute),
+		hub:     realtime.NewHub(logger),
 	}
 	s.routes()
 	return s
@@ -98,6 +101,10 @@ func (s *Server) routes() {
 
 	s.mux.Handle("GET /api/balances", s.requireAuth(http.HandlerFunc(s.handleBalances)))
 	s.mux.Handle("GET /api/settlements", s.requireAuth(http.HandlerFunc(s.handleSettlements)))
+
+	// Realtime event stream. The upgrade is gated by the same session cookie as
+	// the rest of the API.
+	s.mux.Handle("GET /api/ws", s.requireAuth(http.HandlerFunc(s.handleWebSocket)))
 
 	s.mux.HandleFunc("GET /", s.handleStatic)
 }
@@ -270,6 +277,13 @@ type statusRecorder struct {
 func (r *statusRecorder) WriteHeader(status int) {
 	r.status = status
 	r.ResponseWriter.WriteHeader(status)
+}
+
+// Unwrap exposes the underlying ResponseWriter so http.ResponseController can
+// reach the Hijacker a WebSocket upgrade needs. Without it, wrapping the
+// connection for logging turns every upgrade into a 501.
+func (r *statusRecorder) Unwrap() http.ResponseWriter {
+	return r.ResponseWriter
 }
 
 func (s *Server) logRequests(next http.Handler) http.Handler {

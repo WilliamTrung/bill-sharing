@@ -389,6 +389,26 @@
 
   Chrome.onLanguageChange = renderAll;
 
+  // Realtime: reload this bill when an event concerns it so participants and
+  // shares reflect someone else's action live. `state` is session-derived and is
+  // deliberately left untouched.
+  const refresh = UI.debounce(async () => {
+    try {
+      cache.bill = await API.publicBill(billId);
+      renderAll();
+    } catch (err) {
+      /* keep the current view if the background refresh fails */
+    }
+  }, 250);
+
+  Chrome.onRealtime = (event) => {
+    if (event.type === "socket.open") {
+      refresh();
+      return;
+    }
+    if (event.bill && event.bill.bill_id === billId) refresh();
+  };
+
   Chrome.start({
     async onReady() {
       if (!billId) {

@@ -79,6 +79,19 @@ const Chrome = (() => {
     }
   }
 
+  // startRealtime opens the event stream and forwards every event to the
+  // current page's `Chrome.onRealtime` hook, if it has one. Pages that do not
+  // opt in still get the notification bell.
+  function startRealtime() {
+    if (typeof Realtime === "undefined") return;
+    Realtime.start();
+    Realtime.onAny((event) => {
+      if (typeof Chrome.onRealtime === "function") {
+        Chrome.onRealtime(event);
+      }
+    });
+  }
+
   async function start(options) {
     const opts = options || {};
     try {
@@ -86,8 +99,10 @@ const Chrome = (() => {
     } catch (err) {
       if (err.status === 401) return;
     }
+    let authenticated = false;
     if (typeof I18n !== "undefined") {
       const session = await API.currentSession();
+      authenticated = session !== null;
       if (session && session.language) {
         I18n.useDefault(session.language);
         I18n.apply();
@@ -98,6 +113,9 @@ const Chrome = (() => {
     mountNavToggle();
     wireLogout();
     Icons.apply();
+    // Only signed-in pages get the bell and the event stream; the public bill
+    // list is anonymous and its socket would be rejected anyway.
+    if (authenticated) startRealtime();
     if (opts.onReady) {
       try {
         await opts.onReady();
@@ -163,6 +181,9 @@ const Icons = (() => {
     undo: '<path d="M3 7v6h6"/><path d="M3 13a9 9 0 1 0 3-7.7L3 8"/>',
     search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
     "chevron-right": '<path d="m9 18 6-6-6-6"/>',
+    bell:
+      '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/>' +
+      '<path d="M13.7 21a2 2 0 0 1-3.4 0"/>',
   };
 
   function svg(name, size) {
