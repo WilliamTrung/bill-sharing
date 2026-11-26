@@ -7,6 +7,7 @@ const I18n = (() => {
     "app.name": "Bill Sharing",
     "app.eyebrow.overview": "Overview",
     "app.eyebrow.admin": "Admin",
+    "app.eyebrow.people": "People",
     "app.eyebrow.newExpense": "New expense",
     "app.eyebrow.account": "Account",
 
@@ -121,6 +122,8 @@ const I18n = (() => {
     "server.usernameTaken": "Username is already taken",
     "server.emailTaken": "Email is already in use",
     "server.tooManyAttempts": "Too many attempts. Try again later.",
+    "server.groupMustIncludeYou": "A group must include you",
+    "server.groupNotYours": "Only an admin or the group leader can edit this group",
 
     "index.docTitle": "Dashboard · Bill Sharing",
     "index.heading": "Shared expenses",
@@ -162,6 +165,7 @@ const I18n = (() => {
     "admin.docTitle": "Members & groups · Bill Sharing",
     "admin.heading": "Members & groups",
     "admin.sub": "People who share expenses, and the composite groups they form.",
+    "admin.memberNotice": "You can see everyone here. Only admins can add or edit members; you can create and edit groups that include you.",
     "admin.members": "Members",
     "admin.membersHint": "Deactivating a member keeps their past bills intact.",
     "admin.showInactive": "Show inactive",
@@ -354,6 +358,7 @@ const I18n = (() => {
     "app.name": "Chia Hoá Đơn",
     "app.eyebrow.overview": "Tổng quan",
     "app.eyebrow.admin": "Quản trị",
+    "app.eyebrow.people": "Mọi người",
     "app.eyebrow.newExpense": "Chi phí mới",
     "app.eyebrow.account": "Tài khoản",
 
@@ -468,6 +473,8 @@ const I18n = (() => {
     "server.usernameTaken": "Tên đăng nhập đã được dùng",
     "server.emailTaken": "Email đã được dùng",
     "server.tooManyAttempts": "Quá nhiều lần thử. Vui lòng thử lại sau.",
+    "server.groupMustIncludeYou": "Nhóm phải có bạn là thành viên",
+    "server.groupNotYours": "Chỉ quản trị viên hoặc trưởng nhóm mới sửa được nhóm này",
 
     "index.docTitle": "Tổng quan · Chia Hoá Đơn",
     "index.heading": "Chi phí chung",
@@ -509,6 +516,7 @@ const I18n = (() => {
     "admin.docTitle": "Thành viên & nhóm · Chia Hoá Đơn",
     "admin.heading": "Thành viên & nhóm",
     "admin.sub": "Những người cùng chia sẻ chi phí và các nhóm ghép mà họ tạo thành.",
+    "admin.memberNotice": "Bạn xem được tất cả mọi người ở đây. Chỉ quản trị viên mới thêm hoặc sửa thành viên; bạn có thể tạo và sửa các nhóm có bạn tham gia.",
     "admin.members": "Thành viên",
     "admin.membersHint": "Ngừng hoạt động một thành viên sẽ giữ nguyên các hoá đơn cũ.",
     "admin.showInactive": "Hiện cả người ngừng hoạt động",
@@ -705,6 +713,8 @@ const I18n = (() => {
     "Username is already taken": "server.usernameTaken",
     "Email is already in use": "server.emailTaken",
     "Too many attempts. Try again later.": "server.tooManyAttempts",
+    "A group must include you": "server.groupMustIncludeYou",
+    "Only an admin or the group leader can edit this group": "server.groupNotYours",
   };
 
   let lang = DEFAULT_LANG;

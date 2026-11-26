@@ -26,7 +26,7 @@ type groupInput struct {
 func (s *Server) handleListGroups(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	rows, err := s.db.Query(ctx, `
-		SELECT id, name, internal_split_type, is_active, created_at, updated_at
+		SELECT id, name, internal_split_type, is_active, leader_user_id, created_at, updated_at
 		FROM member_groups
 		ORDER BY is_active DESC, name ASC`)
 	if err != nil {
@@ -40,7 +40,7 @@ func (s *Server) handleListGroups(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var g models.Group
 		if err := rows.Scan(&g.ID, &g.Name, &g.InternalSplitType, &g.IsActive,
-			&g.CreatedAt, &g.UpdatedAt); err != nil {
+			&g.LeaderUserID, &g.CreatedAt, &g.UpdatedAt); err != nil {
 			writeError(w, http.StatusInternalServerError, "Could not load groups")
 			return
 		}
@@ -101,6 +101,22 @@ func (s *Server) handleCreateGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Non-admins may only create a group they are part of, and they lead it so
+	// they can edit it later; admins create groups on anyone's behalf.
+	var leaderUserID *int64
+	if !s.requestIsAdmin(r) {
+		userID, ok := s.auth.RequestUser(r)
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "Authentication required")
+			return
+		}
+		if !containsMember(members, userID) {
+			writeError(w, http.StatusForbidden, "A group must include you")
+			return
+		}
+		leaderUserID = &userID
+	}
+
 	active := true
 	if in.IsActive != nil {
 		active = *in.IsActive
@@ -116,9 +132,9 @@ func (s *Server) handleCreateGroup(w http.ResponseWriter, r *http.Request) {
 
 	var groupID int64
 	if err := tx.QueryRow(ctx, `
-		INSERT INTO member_groups (name, internal_split_type, is_active)
-		VALUES ($1, $2, $3) RETURNING id`,
-		name, splitType, active,
+		INSERT INTO member_groups (name, internal_split_type, is_active, leader_user_id)
+		VALUES ($1, $2, $3, $4) RETURNING id`,
+		name, splitType, active, leaderUserID,
 	).Scan(&groupID); err != nil {
 		s.logger.Error("create group", "error", err)
 		writeError(w, http.StatusInternalServerError, "Could not create group")
@@ -187,16 +203,32 @@ func (s *Server) handleUpdateGroup(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback(ctx)
 
 	var current models.Group
+	var leaderUserID *int64
 	if err := tx.QueryRow(ctx, `
-		SELECT id, name, internal_split_type, is_active
+		SELECT id, name, internal_split_type, is_active, leader_user_id
 		FROM member_groups WHERE id = $1 FOR UPDATE`, id,
-	).Scan(&current.ID, &current.Name, &current.InternalSplitType, &current.IsActive); err != nil {
+	).Scan(&current.ID, &current.Name, &current.InternalSplitType, &current.IsActive, &leaderUserID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "Group not found")
 			return
 		}
 		writeError(w, http.StatusInternalServerError, "Could not update group")
 		return
+	}
+
+	if !s.canManageGroup(r, leaderUserID) {
+		writeError(w, http.StatusForbidden, "Only an admin or the group leader can edit this group")
+		return
+	}
+
+	// A non-admin may reshape the group, but only while they stay in it, so they
+	// never lock themselves out of the group they lead.
+	if !s.requestIsAdmin(r) {
+		userID, _ := s.auth.RequestUser(r)
+		if in.Members != nil && !containsMember(in.Members, userID) {
+			writeError(w, http.StatusForbidden, "A group must include you")
+			return
+		}
 	}
 
 	name := current.Name
@@ -262,9 +294,9 @@ func (s *Server) handleUpdateGroup(w http.ResponseWriter, r *http.Request) {
 func (s *Server) loadGroup(ctx context.Context, id int64) (models.Group, error) {
 	var g models.Group
 	if err := s.db.QueryRow(ctx, `
-		SELECT id, name, internal_split_type, is_active, created_at, updated_at
+		SELECT id, name, internal_split_type, is_active, leader_user_id, created_at, updated_at
 		FROM member_groups WHERE id = $1`, id,
-	).Scan(&g.ID, &g.Name, &g.InternalSplitType, &g.IsActive, &g.CreatedAt, &g.UpdatedAt); err != nil {
+	).Scan(&g.ID, &g.Name, &g.InternalSplitType, &g.IsActive, &g.LeaderUserID, &g.CreatedAt, &g.UpdatedAt); err != nil {
 		return models.Group{}, err
 	}
 
@@ -288,6 +320,15 @@ func (s *Server) loadGroup(ctx context.Context, id int64) (models.Group, error) 
 		g.Members = append(g.Members, gm)
 	}
 	return g, rows.Err()
+}
+
+func containsMember(members []groupMemberInput, id int64) bool {
+	for _, member := range members {
+		if member.MemberID == id {
+			return true
+		}
+	}
+	return false
 }
 
 func validateGroupFields(name, splitType string) (string, string, error) {

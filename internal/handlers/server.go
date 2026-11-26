@@ -82,8 +82,10 @@ func (s *Server) routes() {
 	s.mux.Handle("GET /api/members", s.requireAuth(http.HandlerFunc(s.handleListMembers)))
 	s.mux.Handle("GET /api/members/{id}", s.requireAuth(http.HandlerFunc(s.handleGetMember)))
 
-	s.mux.Handle("POST /api/groups", s.requireAdmin(http.HandlerFunc(s.handleCreateGroup)))
-	s.mux.Handle("PUT /api/groups/{id}", s.requireAdmin(http.HandlerFunc(s.handleUpdateGroup)))
+	// Groups may be created and edited by admins and by the member who leads
+	// them; the handlers enforce who may touch which group.
+	s.mux.Handle("POST /api/groups", s.requireAuth(http.HandlerFunc(s.handleCreateGroup)))
+	s.mux.Handle("PUT /api/groups/{id}", s.requireAuth(http.HandlerFunc(s.handleUpdateGroup)))
 	s.mux.Handle("GET /api/groups", s.requireAuth(http.HandlerFunc(s.handleListGroups)))
 	s.mux.Handle("GET /api/groups/{id}", s.requireAuth(http.HandlerFunc(s.handleGetGroup)))
 
@@ -164,11 +166,6 @@ func staticPageRequiresAuth(file string) bool {
 	}
 }
 
-// adminOnlyPage marks the pages whose contents only make sense for admins.
-func adminOnlyPage(file string) bool {
-	return file == "admin/index.html"
-}
-
 // requestIsAdmin resolves the caller's account server-side and checks it against
 // ADMIN_EMAILS. Authorization is decided here, never by the browser.
 func (s *Server) requestIsAdmin(r *http.Request) bool {
@@ -182,6 +179,25 @@ func (s *Server) requestIsAdmin(r *http.Request) bool {
 		return false
 	}
 	return s.cfg.IsAdminEmail(user.Email)
+}
+
+// canManageGroup reports whether the caller may change a group: admins may edit
+// any group, while everyone else may only edit the group they lead.
+func (s *Server) canManageGroup(r *http.Request, leaderUserID *int64) bool {
+	if s.requestIsAdmin(r) {
+		return true
+	}
+	userID, ok := s.auth.RequestUser(r)
+	if !ok {
+		return false
+	}
+	return userLeadsGroup(userID, leaderUserID)
+}
+
+// userLeadsGroup is the pure half of the rule above, kept separate so the
+// permission check can be tested without a database.
+func userLeadsGroup(userID int64, leaderUserID *int64) bool {
+	return leaderUserID != nil && *leaderUserID == userID
 }
 
 func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
@@ -198,13 +214,6 @@ func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
 
 	if staticPageRequiresAuth(name) && !s.auth.RequestValid(r) {
 		http.Redirect(w, r, "/login.html", http.StatusFound)
-		return
-	}
-
-	// The server decides access to admin pages; a non-admin is sent back to the
-	// dashboard rather than being handed the management UI.
-	if adminOnlyPage(name) && !s.requestIsAdmin(r) {
-		http.Redirect(w, r, "/dashboard.html", http.StatusFound)
 		return
 	}
 

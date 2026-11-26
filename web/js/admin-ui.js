@@ -9,6 +9,7 @@
     groupSplitType: "EVEN",
     groupContextMemberId: null,
     isAdmin: false,
+    userId: null,
   };
 
   const membersBody = document.getElementById("members-body");
@@ -35,6 +36,12 @@
 
   function memberById(id) {
     return state.members.find((m) => m.id === id);
+  }
+
+  // An admin may change any group; everyone else may only change the group they
+  // lead, which the server also enforces.
+  function canManageGroup(group) {
+    return state.isAdmin || (group.leader_user_id != null && group.leader_user_id === state.userId);
   }
 
   function canInvite(member) {
@@ -104,22 +111,25 @@
       detailBtn.dataset.icon = "eye";
       detailBtn.addEventListener("click", () => openDrawer(member.id));
       actionsWrap.appendChild(detailBtn);
-      const editBtn = UI.el("button", "btn btn-quiet btn-sm", I18n.t("action.edit"));
-      editBtn.type = "button";
-      editBtn.dataset.icon = "edit";
-      editBtn.addEventListener("click", () => openMemberModal(member));
-      actionsWrap.appendChild(editBtn);
 
-      if (canInvite(member)) {
-        const inviteBtn = UI.el("button", "btn btn-ghost btn-sm", I18n.t("admin.resendInvite"));
-        inviteBtn.type = "button";
-        inviteBtn.dataset.icon = "mail";
-        inviteBtn.title = I18n.t("admin.resendInviteHint");
-        inviteBtn.addEventListener("click", () => sendInvite(member, inviteBtn));
-        actionsWrap.appendChild(inviteBtn);
+      // Everyone may read a member's details; only admins may change them.
+      if (state.isAdmin) {
+        const editBtn = UI.el("button", "btn btn-quiet btn-sm", I18n.t("action.edit"));
+        editBtn.type = "button";
+        editBtn.dataset.icon = "edit";
+        editBtn.addEventListener("click", () => openMemberModal(member));
+        actionsWrap.appendChild(editBtn);
+
+        if (canInvite(member)) {
+          const inviteBtn = UI.el("button", "btn btn-ghost btn-sm", I18n.t("admin.resendInvite"));
+          inviteBtn.type = "button";
+          inviteBtn.dataset.icon = "mail";
+          inviteBtn.title = I18n.t("admin.resendInviteHint");
+          inviteBtn.addEventListener("click", () => sendInvite(member, inviteBtn));
+          actionsWrap.appendChild(inviteBtn);
+        }
       }
 
-      if (!state.isAdmin) actionsWrap.replaceChildren();
       Icons.apply(actionsWrap);
       actions.appendChild(actionsWrap);
       row.appendChild(actions);
@@ -157,7 +167,7 @@
       editBtn.type = "button";
       editBtn.dataset.icon = "edit";
       editBtn.addEventListener("click", () => openGroupModal(group));
-      if (state.isAdmin) {
+      if (canManageGroup(group)) {
         Icons.apply(editBtn);
         head.appendChild(editBtn);
       }
@@ -289,10 +299,15 @@
       const label = document.createElement("label");
       label.className = "choice";
 
+      // Non-admins may only build groups they belong to, so their own row is
+      // always included and cannot be unchecked.
+      const isSelf = !state.isAdmin && member.id === state.userId;
+
       const checkbox = document.createElement("input");
       checkbox.type = "checkbox";
       checkbox.value = String(member.id);
-      checkbox.checked = preselected.has(member.id);
+      checkbox.checked = isSelf || preselected.has(member.id);
+      checkbox.disabled = isSelf;
       checkbox.dataset.memberId = String(member.id);
 
       const body = UI.el("div", "choice-body");
@@ -421,10 +436,13 @@
     }
     drawerBody.appendChild(groupsWrap);
 
+    // A member may start a group that includes themselves; admins may start one
+    // around anyone. Both paths are enforced server-side.
+    const canStartGroup = state.isAdmin || member.id === state.userId;
     const createBtn = document.getElementById("drawer-create-group");
     createBtn.disabled = !member.is_active;
     createBtn.title = member.is_active ? "" : I18n.t("admin.activateFirst");
-    createBtn.classList.toggle("hidden", !state.isAdmin);
+    createBtn.classList.toggle("hidden", !canStartGroup);
 
     resendInviteBtn.classList.toggle("hidden", !state.isAdmin || !canInvite(member));
     resendInviteBtn.title = canInvite(member) ? I18n.t("admin.resendInviteHint") : "";
@@ -450,6 +468,7 @@
     state.members = members;
     state.groups = groups;
     state.isAdmin = Boolean(session && session.is_admin);
+    state.userId = session && session.user ? session.user.id : null;
     applyPermissions();
     renderMembers();
     renderGroups();
@@ -461,6 +480,16 @@
     document.querySelectorAll("[data-admin-only]").forEach((node) => {
       node.classList.toggle("hidden", !state.isAdmin);
     });
+    const notice = document.getElementById("member-notice");
+    if (notice) notice.classList.toggle("hidden", state.isAdmin);
+
+    // The page is no longer admin-exclusive, so label it for whoever is looking.
+    const eyebrow = document.getElementById("page-eyebrow");
+    if (eyebrow) {
+      const key = state.isAdmin ? "app.eyebrow.admin" : "app.eyebrow.people";
+      eyebrow.dataset.i18n = key;
+      eyebrow.textContent = I18n.t(key);
+    }
   }
 
   Chrome.onLanguageChange = () => {
