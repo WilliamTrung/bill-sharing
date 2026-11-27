@@ -266,6 +266,15 @@ func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Every other project page scopes its API calls by the id in the URL, so a
+	// bare /admin, /create-bill.html or /bill-detail.html bookmark would run with
+	// project 0 and fail. Send it into the user's first project instead, keeping
+	// the page and query string; with no project, go to the picker.
+	if projectID == 0 && s.auth.RequestValid(r) && projectScopedPage(name) {
+		http.Redirect(w, r, s.projectScopedRedirect(r, urlPath), http.StatusFound)
+		return
+	}
+
 	s.servePage(w, r, name)
 }
 
@@ -331,6 +340,36 @@ func (s *Server) projectsHome(r *http.Request) string {
 		return "/projects"
 	}
 	return fmt.Sprintf("/p/%d/dashboard.html", projects[0].ID)
+}
+
+// projectScopedPage reports whether a page reads the project id from its URL to
+// scope API calls. Requested without a /p/<id>/ prefix such a page runs with
+// project 0, so handleStatic redirects it into the user's project first.
+func projectScopedPage(name string) bool {
+	switch name {
+	case "dashboard.html", "create-bill.html", "bill-detail.html", "admin/index.html":
+		return true
+	default:
+		return false
+	}
+}
+
+// projectScopedRedirect puts the page under the user's first project, keeping
+// the path and query string. With no project it points at the picker.
+func (s *Server) projectScopedRedirect(r *http.Request, urlPath string) string {
+	userID, ok := s.auth.RequestUser(r)
+	if !ok {
+		return "/login.html"
+	}
+	projects, err := s.listProjectsFor(r.Context(), userID)
+	if err != nil || len(projects) == 0 {
+		return "/projects"
+	}
+	target := fmt.Sprintf("/p/%d%s", projects[0].ID, urlPath)
+	if r.URL.RawQuery != "" {
+		target += "?" + r.URL.RawQuery
+	}
+	return target
 }
 
 func (s *Server) servePage(w http.ResponseWriter, r *http.Request, name string) {
