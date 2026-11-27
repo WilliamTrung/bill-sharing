@@ -312,7 +312,7 @@ body.pane-collapsed .pane-empty {
 }
 
 body.pane-collapsed .pane-head {
-  justify-content: center;
+  justify-content: flex-start;
 }
 
 body.pane-collapsed .pane-add {
@@ -320,12 +320,12 @@ body.pane-collapsed .pane-add {
 }
 
 body.pane-collapsed .pane-list {
-  justify-items: center;
+  justify-items: stretch;
 }
 
 body.pane-collapsed .pane-link {
-  padding: 7px 0;
-  justify-content: center;
+  padding: 7px 9px;
+  justify-content: flex-start;
   width: 100%;
 }
 
