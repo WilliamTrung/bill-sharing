@@ -110,16 +110,13 @@ const Chrome = (() => {
     }
   }
 
-  // --- project pane ---------------------------------------------------------
+  // --- project drawer -------------------------------------------------------
 
-  const PANE_KEY = "bs.pane.collapsed";
-
-  // mountProjectPane injects the collapsible left pane listing every project
-  // plus a create button. It is built here rather than in each HTML file because
-  // the page shell is duplicated across six documents.
+  // mountProjectPane injects a left drawer listing every project plus a create
+  // button, opened from a launcher in the top bar. It is built here rather than
+  // in each HTML file because the page shell is duplicated across six documents.
   function mountProjectPane(projects) {
-    const main = document.querySelector("main.main");
-    if (!main || document.getElementById("project-pane")) return;
+    if (document.getElementById("project-pane")) return;
 
     const currentId = currentProjectID();
 
@@ -129,14 +126,6 @@ const Chrome = (() => {
     aside.setAttribute("aria-label", I18n.t("projects.title"));
 
     const head = UI.el("div", "pane-head");
-    const toggle = document.createElement("button");
-    toggle.type = "button";
-    toggle.className = "pane-toggle icon-btn";
-    toggle.dataset.icon = "chevron-right";
-    toggle.setAttribute("aria-expanded", "false");
-    toggle.setAttribute("aria-controls", "project-pane-list");
-    toggle.title = I18n.t("projects.collapse");
-
     const title = UI.el("span", "pane-title", I18n.t("projects.title"));
 
     const addBtn = document.createElement("button");
@@ -146,9 +135,16 @@ const Chrome = (() => {
     addBtn.title = I18n.t("projects.new");
     addBtn.setAttribute("aria-label", I18n.t("projects.new"));
 
-    head.appendChild(toggle);
+    const closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.className = "pane-toggle icon-btn";
+    closeBtn.dataset.icon = "x";
+    closeBtn.title = I18n.t("action.close");
+    closeBtn.setAttribute("aria-label", I18n.t("action.close"));
+
     head.appendChild(title);
     head.appendChild(addBtn);
+    head.appendChild(closeBtn);
     aside.appendChild(head);
 
     const list = UI.el("ul", "pane-list");
@@ -174,55 +170,47 @@ const Chrome = (() => {
     }
     aside.appendChild(list);
 
-    // Wrap existing page content so the pane can sit beside it without touching
-    // markup that pages already put directly inside <main>.
-    const content = document.createElement("div");
-    content.className = "main-content";
-    while (main.firstChild) content.appendChild(main.firstChild);
-    main.appendChild(aside);
-    main.appendChild(content);
-    main.classList.add("main-layout");
+    const backdrop = UI.el("div", "backdrop");
+    document.body.appendChild(backdrop);
+    document.body.appendChild(aside);
+
+    // Launcher at the far left of the header opens the drawer.
+    const topbar = document.querySelector(".topbar-inner");
+    const launcher = document.createElement("button");
+    launcher.type = "button";
+    launcher.className = "icon-btn pane-launcher";
+    launcher.dataset.icon = "folder";
+    launcher.title = I18n.t("projects.title");
+    launcher.setAttribute("aria-label", I18n.t("projects.title"));
+    launcher.setAttribute("aria-controls", "project-pane");
+    launcher.setAttribute("aria-expanded", "false");
+    if (topbar) topbar.insertBefore(launcher, topbar.firstChild);
 
     Icons.apply(aside);
+    if (topbar) Icons.apply(topbar);
 
-    const setCollapsed = (collapsed) => {
-      document.body.classList.toggle("pane-collapsed", collapsed);
-      toggle.setAttribute("aria-expanded", String(!collapsed));
-      try {
-        window.localStorage.setItem(PANE_KEY, collapsed ? "1" : "0");
-      } catch (err) {
-        /* private mode: the choice just does not persist */
-      }
+    const openDrawer = () => {
+      aside.classList.add("open");
+      backdrop.classList.add("open");
+      launcher.setAttribute("aria-expanded", "true");
+    };
+    const closeDrawer = () => {
+      aside.classList.remove("open");
+      backdrop.classList.remove("open");
+      launcher.setAttribute("aria-expanded", "false");
     };
 
-    let stored = "0";
-    try {
-      stored = window.localStorage.getItem(PANE_KEY) || "0";
-    } catch (err) {
-      /* ignore */
-    }
-    if (stored === "1") setCollapsed(true);
-
-    toggle.addEventListener("click", () => {
-      setCollapsed(!document.body.classList.contains("pane-collapsed"));
-    });
-
+    launcher.addEventListener("click", openDrawer);
+    closeBtn.addEventListener("click", closeDrawer);
+    backdrop.addEventListener("click", closeDrawer);
     addBtn.addEventListener("click", () => promptNewProject());
-
-    // On narrow screens the pane is off-canvas; a tap outside closes it.
-    document.addEventListener("click", (event) => {
-      if (window.innerWidth > 820) return;
-      if (!aside.contains(event.target) && !aside.classList.contains("hidden")) {
-        aside.classList.remove("open");
-      }
+    list.querySelectorAll(".pane-link").forEach((link) => {
+      link.addEventListener("click", closeDrawer);
     });
+
     document.addEventListener("keydown", (event) => {
-      if (event.key === "Escape") aside.classList.remove("open");
+      if (event.key === "Escape") closeDrawer();
     });
-
-    if (window.innerWidth <= 820) {
-      toggle.addEventListener("click", () => aside.classList.toggle("open"));
-    }
   }
 
   // promptNewProject asks for a name and creates the project, then navigates
@@ -353,6 +341,8 @@ const Icons = (() => {
     undo: '<path d="M3 7v6h6"/><path d="M3 13a9 9 0 1 0 3-7.7L3 8"/>',
     search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
     "chevron-right": '<path d="m9 18 6-6-6-6"/>',
+    folder:
+      '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>',
     bell:
       '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/>' +
       '<path d="M13.7 21a2 2 0 0 1-3.4 0"/>',
