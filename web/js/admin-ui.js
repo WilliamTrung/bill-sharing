@@ -237,8 +237,8 @@
         await API.updateMember(projectId, state.editingMemberId, payload);
         UI.toast(I18n.t("admin.memberUpdated"), "success");
       } else {
-        await API.createMember(projectId, payload);
-        UI.toast(I18n.t("admin.memberAdded"), "success");
+        const created = await API.createMember(projectId, payload);
+        UI.toast(I18n.t(created && created.invite_sent ? "admin.emailSent" : "admin.memberAdded"), "success");
       }
       closeMemberModal();
       await loadAll();

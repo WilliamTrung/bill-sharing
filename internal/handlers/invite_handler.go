@@ -169,7 +169,50 @@ func (s *Server) sendInvite(name, email string, userID, projectID int64) {
 			"Set your password to sign in:\n%s\n\nThis link expires in 7 days.\n",
 		name, link,
 	)
+	s.sendMail(email, subject, body)
+}
 
+// sendAddedNotice tells an already-active account that it was added to a project.
+// There is nothing to activate, so it just links to the project.
+func (s *Server) sendAddedNotice(name, email, projectName string, projectID int64) {
+	link := fmt.Sprintf("%s/p/%d/dashboard.html", s.cfg.PublicBaseURL, projectID)
+	subject := fmt.Sprintf("You were added to %s on Bill Sharing", projectName)
+	body := fmt.Sprintf(
+		"Hi %s,\n\nYou were added to the project %q on Bill Sharing.\n\nOpen it here:\n%s\n",
+		name, projectName, link,
+	)
+	s.sendMail(email, subject, body)
+}
+
+// notifyAddedToProject emails a member who was just added to a project. Accounts
+// that have not set a password yet get an activation link; active accounts get a
+// plain "you were added" note. It reports whether a message was dispatched and
+// is best-effort: a failure never blocks the membership write.
+func (s *Server) notifyAddedToProject(ctx context.Context, userID, projectID int64, name, email string) bool {
+	if !s.mailer.Enabled() || !deliverableEmail(email) {
+		return false
+	}
+	var hasPassword bool
+	if err := s.db.QueryRow(ctx,
+		`SELECT password_hash IS NOT NULL FROM users WHERE id = $1`, userID).Scan(&hasPassword); err != nil {
+		s.logger.Warn("lookup added member for email", "user_id", userID, "error", err)
+		return false
+	}
+	if !hasPassword {
+		s.sendInvite(name, email, userID, projectID)
+		return true
+	}
+	var projectName string
+	if err := s.db.QueryRow(ctx, `SELECT name FROM projects WHERE id = $1`, projectID).Scan(&projectName); err != nil {
+		projectName = "a bill project"
+	}
+	s.sendAddedNotice(name, email, projectName, projectID)
+	return true
+}
+
+// sendMail dispatches mail off the request path with a hard timeout, so a slow
+// or misconfigured SMTP host can never stall the handler.
+func (s *Server) sendMail(email, subject, body string) {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
@@ -178,10 +221,10 @@ func (s *Server) sendInvite(name, email string, userID, projectID int64) {
 		select {
 		case err := <-done:
 			if err != nil {
-				s.logger.Warn("invite email failed", "to", email, "error", err)
+				s.logger.Warn("member email failed", "to", email, "error", err)
 			}
 		case <-ctx.Done():
-			s.logger.Warn("invite email timed out", "to", email)
+			s.logger.Warn("member email timed out", "to", email)
 		}
 	}()
 }

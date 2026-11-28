@@ -71,9 +71,12 @@ type Member struct {
 	ProfileName  string           `json:"profile_name"`
 	ProfilePhone string           `json:"profile_phone"`
 	ProfileNotes string           `json:"profile_notes"`
-	CreatedAt    time.Time        `json:"created_at"`
-	UpdatedAt    time.Time        `json:"updated_at"`
-	Groups       []MemberGroupRef `json:"groups"`
+	// InviteSent is set only on a create response, to tell the caller whether an
+	// activation/added email was dispatched.
+	InviteSent bool             `json:"invite_sent,omitempty"`
+	CreatedAt  time.Time        `json:"created_at"`
+	UpdatedAt  time.Time        `json:"updated_at"`
+	Groups     []MemberGroupRef `json:"groups"`
 }
 
 type GroupMember struct {

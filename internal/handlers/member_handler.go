@@ -188,6 +188,10 @@ func (s *Server) handleCreateMember(w http.ResponseWriter, r *http.Request) {
 				writeError(w, http.StatusInternalServerError, "Could not create member")
 				return
 			}
+			// The account already exists, but this may be the first time this
+			// person hears they were added: notify (activation link if they never
+			// set a password, otherwise a short "added" note).
+			m.InviteSent = s.notifyAddedToProject(ctx, existingID, pc.ProjectID, m.Name, email)
 			writeJSON(w, http.StatusCreated, m)
 			return
 		case !errors.Is(err, pgx.ErrNoRows):
@@ -240,8 +244,9 @@ func (s *Server) handleCreateMember(w http.ResponseWriter, r *http.Request) {
 
 	// Only invite when the admin actually supplied a real address; members added
 	// without one get a placeholder and simply can never sign in.
-	if deliverableEmail(in.Email) && s.mailer.Enabled() {
-		s.sendInvite(displayName, email, id, pc.ProjectID)
+	var inviteSent bool
+	if deliverableEmail(in.Email) {
+		inviteSent = s.notifyAddedToProject(ctx, id, pc.ProjectID, displayName, email)
 	}
 
 	m, err := s.loadMember(ctx, pc.ProjectID, id)
@@ -250,6 +255,7 @@ func (s *Server) handleCreateMember(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "Could not create member")
 		return
 	}
+	m.InviteSent = inviteSent
 	writeJSON(w, http.StatusCreated, m)
 }
 

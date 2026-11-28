@@ -341,20 +341,18 @@ func (s *Server) handleAddProjectMember(w http.ResponseWriter, r *http.Request) 
 		s.emitProject(ids, realtime.TypeProjectMemberAdded, project.ID, project.Name)
 	}
 
-	// A brand-new account needs to set a password before it can sign in; an
-	// existing account is simply told it was added.
+	// Tell the new member by email. A brand-new or not-yet-activated account gets
+	// an activation link; an existing active account gets a short "added" note.
 	displayName := projectName
 	if displayName == "" {
 		displayName = bootstrapName
 	}
-	if created && s.mailer.Enabled() {
-		s.sendInvite(displayName, email, userID, pc.ProjectID)
-	}
+	invited := s.notifyAddedToProject(ctx, userID, pc.ProjectID, displayName, email)
 
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"user_id": userID,
 		"created": created,
-		"invited": created && s.mailer.Enabled(),
+		"invited": invited,
 		"name":    displayName,
 		"email":   email,
 		"role":    "member",
