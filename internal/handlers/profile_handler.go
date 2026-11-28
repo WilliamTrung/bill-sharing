@@ -36,6 +36,8 @@ func (s *Server) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
 		Username    string `json:"username"`
 		Email       string `json:"email"`
 		Language    string `json:"language"`
+		Phone       string `json:"phone"`
+		Notes       string `json:"notes"`
 		IsPublic    *bool  `json:"is_public"`
 	}
 	if err := readJSON(w, r, &body); err != nil {
@@ -47,6 +49,8 @@ func (s *Server) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
 	username := strings.TrimSpace(body.Username)
 	email := strings.TrimSpace(body.Email)
 	language := strings.ToLower(strings.TrimSpace(body.Language))
+	phone := strings.TrimSpace(body.Phone)
+	notes := strings.TrimSpace(body.Notes)
 
 	// Keep the stored value when the client did not send the toggle.
 	isPublic := false
@@ -68,6 +72,12 @@ func (s *Server) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	case utf8.RuneCountInString(username) > 60:
 		writeError(w, http.StatusBadRequest, "Username must be 60 characters or fewer")
+		return
+	case utf8.RuneCountInString(phone) > 40:
+		writeError(w, http.StatusBadRequest, "Phone must be 40 characters or fewer")
+		return
+	case utf8.RuneCountInString(notes) > 2000:
+		writeError(w, http.StatusBadRequest, "Notes must be 2000 characters or fewer")
 		return
 	}
 	if strings.ContainsAny(username, " \t\r\n@") {
@@ -91,7 +101,7 @@ func (s *Server) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := accounts.UpdateProfile(r.Context(), s.db, userID, displayName, username, email, language, isPublic)
+	user, err := accounts.UpdateProfile(r.Context(), s.db, userID, displayName, username, email, language, phone, notes, isPublic)
 	switch {
 	case errors.Is(err, accounts.ErrUsernameTaken):
 		writeError(w, http.StatusConflict, "Username is already taken")

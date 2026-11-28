@@ -56,11 +56,12 @@ func (s *Server) handleListGroups(w http.ResponseWriter, r *http.Request) {
 	}
 
 	memberRows, err := s.db.Query(ctx, `
-		SELECT gm.group_id, gm.member_id, `+userLabelSQLM+`, gm.internal_ratio
+		SELECT gm.group_id, gm.member_id, `+memberLabel("m")+`, gm.internal_ratio
 		FROM group_members gm
 		JOIN member_groups g ON g.id = gm.group_id AND g.project_id = $1
 		JOIN users m ON m.id = gm.member_id
-		ORDER BY `+userLabelSQLM+` ASC`, pc.ProjectID)
+		LEFT JOIN project_members pm ON pm.user_id = m.id AND pm.project_id = $1
+		ORDER BY `+memberLabel("m")+` ASC`, pc.ProjectID)
 	if err != nil {
 		s.logger.Error("list group members", "error", err)
 		writeError(w, http.StatusInternalServerError, "Could not load groups")
@@ -301,11 +302,12 @@ func (s *Server) loadGroup(ctx context.Context, projectID, id int64) (models.Gro
 	}
 
 	rows, err := s.db.Query(ctx, `
-		SELECT gm.member_id, `+userLabelSQLM+`, gm.internal_ratio
+		SELECT gm.member_id, `+memberLabel("m")+`, gm.internal_ratio
 		FROM group_members gm
 		JOIN users m ON m.id = gm.member_id
+		LEFT JOIN project_members pm ON pm.user_id = m.id AND pm.project_id = $2
 		WHERE gm.group_id = $1
-		ORDER BY `+userLabelSQLM+` ASC`, id)
+		ORDER BY `+memberLabel("m")+` ASC`, id, projectID)
 	if err != nil {
 		return models.Group{}, err
 	}
@@ -369,7 +371,7 @@ func (s *Server) validateGroupMembers(ctx context.Context, projectID int64, inpu
 	// The project join is what stops a caller from pulling another tenant's
 	// users into a group; an unknown id falls through to "does not exist".
 	rows, err := s.db.Query(ctx, `
-		SELECT u.id, `+userLabelSQL+` AS name, u.is_active
+		SELECT u.id, `+memberLabel("u")+` AS name, u.is_active
 		FROM users u
 		JOIN project_members pm ON pm.user_id = u.id AND pm.project_id = $2
 		WHERE u.id = ANY($1)`, ids, projectID)

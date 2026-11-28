@@ -60,9 +60,20 @@ type Member struct {
 	IsActive    bool             `json:"is_active"`
 	HasPassword bool             `json:"has_password"`
 	IsPublic    bool             `json:"is_public"`
-	CreatedAt   time.Time        `json:"created_at"`
-	UpdatedAt   time.Time        `json:"updated_at"`
-	Groups      []MemberGroupRef `json:"groups"`
+	// ProjectName/Phone/Notes are the raw per-project overrides. An empty value
+	// means "inherit the account profile" and the Name/Phone/Notes above show
+	// the resolved value.
+	ProjectName  string `json:"project_name"`
+	ProjectPhone string `json:"project_phone"`
+	ProjectNotes string `json:"project_notes"`
+	// ProfileName/Phone/Notes are the account's global values, surfaced so the
+	// edit form can hint what an empty project field will fall back to.
+	ProfileName  string           `json:"profile_name"`
+	ProfilePhone string           `json:"profile_phone"`
+	ProfileNotes string           `json:"profile_notes"`
+	CreatedAt    time.Time        `json:"created_at"`
+	UpdatedAt    time.Time        `json:"updated_at"`
+	Groups       []MemberGroupRef `json:"groups"`
 }
 
 type GroupMember struct {

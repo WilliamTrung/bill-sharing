@@ -3,7 +3,6 @@ package handlers
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"strings"
 
@@ -45,17 +44,27 @@ func (s *Server) redactMember(viewerID int64, viewerIsAdmin bool, m *models.Memb
 	m.Email = ""
 	m.Phone = ""
 	m.Notes = ""
+	m.ProjectPhone = ""
+	m.ProjectNotes = ""
+	m.ProfilePhone = ""
+	m.ProfileNotes = ""
 }
 
 func (s *Server) handleListMembers(w http.ResponseWriter, r *http.Request) {
 	pc, _ := projectFrom(r.Context())
 	ctx := r.Context()
 	rows, err := s.db.Query(ctx, `
-		SELECT u.id, `+userLabelSQL+`, u.phone, u.email, u.notes, u.avatar_color, u.is_active,
-		       (u.password_hash IS NOT NULL) AS has_password, u.is_public, u.created_at, u.updated_at
+		SELECT u.id, `+memberLabel("u")+`,
+		       COALESCE(NULLIF(pm.phone, ''), u.phone),
+		       COALESCE(NULLIF(pm.notes, ''), u.notes),
+		       u.email, u.avatar_color, u.is_active,
+		       (u.password_hash IS NOT NULL) AS has_password, u.is_public,
+		       pm.name, pm.phone, pm.notes,
+		       `+userLabel("u")+`, u.phone, u.notes,
+		       u.created_at, u.updated_at
 		FROM users u
 		JOIN project_members pm ON pm.user_id = u.id AND pm.project_id = $1
-		ORDER BY u.is_active DESC, `+userLabelSQL+` ASC`, pc.ProjectID)
+		ORDER BY u.is_active DESC, `+memberLabel("u")+` ASC`, pc.ProjectID)
 	if err != nil {
 		s.logger.Error("list members", "error", err)
 		writeError(w, http.StatusInternalServerError, "Could not load members")
@@ -66,8 +75,11 @@ func (s *Server) handleListMembers(w http.ResponseWriter, r *http.Request) {
 	members := make([]models.Member, 0)
 	for rows.Next() {
 		var m models.Member
-		if err := rows.Scan(&m.ID, &m.Name, &m.Phone, &m.Email, &m.Notes, &m.AvatarColor,
-			&m.IsActive, &m.HasPassword, &m.IsPublic, &m.CreatedAt, &m.UpdatedAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.Name, &m.Phone, &m.Notes, &m.Email, &m.AvatarColor,
+			&m.IsActive, &m.HasPassword, &m.IsPublic,
+			&m.ProjectName, &m.ProjectPhone, &m.ProjectNotes,
+			&m.ProfileName, &m.ProfilePhone, &m.ProfileNotes,
+			&m.CreatedAt, &m.UpdatedAt); err != nil {
 			s.logger.Error("scan member", "error", err)
 			writeError(w, http.StatusInternalServerError, "Could not load members")
 			return
@@ -126,8 +138,11 @@ func (s *Server) handleCreateMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	name, err := validateMemberFields(in.Name, in.Phone, in.Email, in.Notes)
-	if err != nil {
+	name := strings.TrimSpace(in.Name)
+	phone := strings.TrimSpace(in.Phone)
+	notes := strings.TrimSpace(in.Notes)
+	email := strings.TrimSpace(in.Email)
+	if err := validateMemberFields(name, phone, email, notes); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -142,20 +157,42 @@ func (s *Server) handleCreateMember(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	email := strings.TrimSpace(in.Email)
+
+	// Accounts are global: the same person can belong to several projects, and a
+	// real address may already exist from another project. The account (proven by
+	// email) is authoritative, so link it instead of creating a duplicate. The
+	// name/phone/notes typed here become this project's overrides only.
 	if email != "" {
-		// Email identity is global (an account can join several projects), so the
-		// uniqueness check stays global.
-		var taken bool
-		if err := s.db.QueryRow(ctx, `
-			SELECT EXISTS(SELECT 1 FROM users WHERE lower(email) = lower($1))`, email,
-		).Scan(&taken); err != nil {
+		var existingID int64
+		err := s.db.QueryRow(ctx, `
+			SELECT id FROM users WHERE lower(email) = lower($1) LIMIT 1`, email).Scan(&existingID)
+		switch {
+		case err == nil:
+			tag, err := s.db.Exec(ctx, `
+				INSERT INTO project_members (project_id, user_id, role, name, phone, notes)
+				VALUES ($1, $2, 'member', $3, $4, $5)
+				ON CONFLICT (project_id, user_id) DO NOTHING`,
+				pc.ProjectID, existingID, name, phone, notes)
+			if err != nil {
+				s.logger.Error("link existing member", "error", err)
+				writeError(w, http.StatusInternalServerError, "Could not create member")
+				return
+			}
+			if tag.RowsAffected() == 0 {
+				writeError(w, http.StatusConflict, "That person is already in this project")
+				return
+			}
+			m, err := s.loadMember(ctx, pc.ProjectID, existingID)
+			if err != nil {
+				s.logger.Error("load linked member", "error", err)
+				writeError(w, http.StatusInternalServerError, "Could not create member")
+				return
+			}
+			writeJSON(w, http.StatusCreated, m)
+			return
+		case !errors.Is(err, pgx.ErrNoRows):
 			s.logger.Error("check member email", "error", err)
 			writeError(w, http.StatusInternalServerError, "Could not create member")
-			return
-		}
-		if taken {
-			writeError(w, http.StatusBadRequest, "Email is already in use")
 			return
 		}
 	}
@@ -169,28 +206,33 @@ func (s *Server) handleCreateMember(w http.ResponseWriter, r *http.Request) {
 	if email == "" {
 		email = username + "@users.invalid"
 	}
+	// Give the new account a global label so invites and the session have a real
+	// name. The per-project fields below still start exactly as typed.
+	displayName := name
+	if displayName == "" {
+		displayName = username
+	}
 
-	var m models.Member
+	var id int64
 	err = s.db.QueryRow(ctx, `
-		INSERT INTO users (username, email, password_hash, display_name, phone, notes, avatar_color, is_active)
-		VALUES ($1, $2, NULL, $3, $4, $5, $6, $7)
-		RETURNING id, `+userLabelSQL+`, phone, email, notes, avatar_color, is_active,
-		          (password_hash IS NOT NULL) AS has_password, is_public, created_at, updated_at`,
-		username, email, name, strings.TrimSpace(in.Phone),
-		strings.TrimSpace(in.Notes), color, active,
-	).Scan(&m.ID, &m.Name, &m.Phone, &m.Email, &m.Notes, &m.AvatarColor,
-		&m.IsActive, &m.HasPassword, &m.IsPublic, &m.CreatedAt, &m.UpdatedAt)
+		INSERT INTO users (username, email, password_hash, display_name, avatar_color, is_active)
+		VALUES ($1, $2, NULL, $3, $4, $5)
+		RETURNING id`,
+		username, email, displayName, color, active,
+	).Scan(&id)
 	if err != nil {
 		s.logger.Error("create member", "error", err)
 		writeError(w, http.StatusInternalServerError, "Could not create member")
 		return
 	}
-	m.Groups = []models.MemberGroupRef{}
 
-	// The new account only exists for this project, so join it there.
+	// The new account only exists for this project, so join it there with the
+	// project-level values (empty means inherit the global profile).
 	if _, err := s.db.Exec(ctx, `
-		INSERT INTO project_members (project_id, user_id, role) VALUES ($1, $2, 'member')
-		ON CONFLICT (project_id, user_id) DO NOTHING`, pc.ProjectID, m.ID); err != nil {
+		INSERT INTO project_members (project_id, user_id, role, name, phone, notes)
+		VALUES ($1, $2, 'member', $3, $4, $5)
+		ON CONFLICT (project_id, user_id) DO NOTHING`,
+		pc.ProjectID, id, name, phone, notes); err != nil {
 		s.logger.Error("create member membership", "error", err)
 		writeError(w, http.StatusInternalServerError, "Could not create member")
 		return
@@ -199,9 +241,15 @@ func (s *Server) handleCreateMember(w http.ResponseWriter, r *http.Request) {
 	// Only invite when the admin actually supplied a real address; members added
 	// without one get a placeholder and simply can never sign in.
 	if deliverableEmail(in.Email) && s.mailer.Enabled() {
-		s.sendInvite(m.Name, m.Email, m.ID, pc.ProjectID)
+		s.sendInvite(displayName, email, id, pc.ProjectID)
 	}
 
+	m, err := s.loadMember(ctx, pc.ProjectID, id)
+	if err != nil {
+		s.logger.Error("load created member", "error", err)
+		writeError(w, http.StatusInternalServerError, "Could not create member")
+		return
+	}
 	writeJSON(w, http.StatusCreated, m)
 }
 
@@ -240,7 +288,18 @@ func (s *Server) handleUpdateMember(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	existing, err := s.loadMember(ctx, pc.ProjectID, id)
+
+	// Load the raw per-project overrides plus the global account fields, so an
+	// omitted field keeps its current value and an explicit empty string clears
+	// the override (inheriting the profile).
+	var rawName, rawPhone, rawEmail, rawNotes, rawColor string
+	var rawActive bool
+	err := s.db.QueryRow(ctx, `
+		SELECT pm.name, pm.phone, u.email, pm.notes, u.avatar_color, u.is_active
+		FROM project_members pm
+		JOIN users u ON u.id = pm.user_id
+		WHERE pm.project_id = $1 AND pm.user_id = $2`, pc.ProjectID, id,
+	).Scan(&rawName, &rawPhone, &rawEmail, &rawNotes, &rawColor, &rawActive)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "Member not found")
 		return
@@ -251,12 +310,12 @@ func (s *Server) handleUpdateMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	name := existing.Name
-	phone := existing.Phone
-	email := existing.Email
-	notes := existing.Notes
-	color := existing.AvatarColor
-	active := existing.IsActive
+	name := rawName
+	phone := rawPhone
+	email := rawEmail
+	notes := rawNotes
+	color := rawColor
+	active := rawActive
 
 	if in.Name != nil {
 		name = strings.TrimSpace(*in.Name)
@@ -277,7 +336,7 @@ func (s *Server) handleUpdateMember(w http.ResponseWriter, r *http.Request) {
 		active = *in.IsActive
 	}
 
-	if _, err := validateMemberFields(name, phone, email, notes); err != nil {
+	if err := validateMemberFields(name, phone, email, notes); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -285,40 +344,52 @@ func (s *Server) handleUpdateMember(w http.ResponseWriter, r *http.Request) {
 		color = avatarColor(name)
 	}
 
-	sets := make([]string, 0, 7)
-	args := make([]any, 0, 7)
-	add := func(column string, value any) {
-		args = append(args, value)
-		sets = append(sets, fmt.Sprintf("%s = $%d", column, len(args)))
-	}
-	if in.Name != nil {
-		add("display_name", name)
-	}
-	if in.Phone != nil {
-		add("phone", phone)
-	}
-	if in.Email != nil {
-		add("email", email)
-	}
-	if in.Notes != nil {
-		add("notes", notes)
-	}
-	if in.AvatarColor != nil {
-		add("avatar_color", color)
-	}
-	if in.IsActive != nil {
-		add("is_active", active)
-	}
-
-	if len(sets) > 0 {
-		sets = append(sets, "updated_at = now()")
-		args = append(args, id)
-		query := fmt.Sprintf("UPDATE users SET %s WHERE id = $%d", strings.Join(sets, ", "), len(args))
-		if _, err := s.db.Exec(ctx, query, args...); err != nil {
-			s.logger.Error("update member", "error", err)
+	// Email is global (shared across projects), so changing it must not collide
+	// with another account.
+	if !strings.EqualFold(email, rawEmail) {
+		var taken bool
+		if err := s.db.QueryRow(ctx, `
+			SELECT EXISTS(SELECT 1 FROM users WHERE lower(email) = lower($1) AND id <> $2)`,
+			email, id).Scan(&taken); err != nil {
+			s.logger.Error("check member email", "error", err)
 			writeError(w, http.StatusInternalServerError, "Could not update member")
 			return
 		}
+		if taken {
+			writeError(w, http.StatusConflict, "Email is already in use")
+			return
+		}
+	}
+
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		s.logger.Error("begin update member", "error", err)
+		writeError(w, http.StatusInternalServerError, "Could not update member")
+		return
+	}
+	defer tx.Rollback(ctx)
+
+	// Name/phone/notes are project-scoped; email/avatar/active are account-wide.
+	if _, err := tx.Exec(ctx, `
+		UPDATE project_members SET name = $1, phone = $2, notes = $3
+		WHERE project_id = $4 AND user_id = $5`,
+		name, phone, notes, pc.ProjectID, id); err != nil {
+		s.logger.Error("update member overrides", "error", err)
+		writeError(w, http.StatusInternalServerError, "Could not update member")
+		return
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE users SET email = $1, avatar_color = $2, is_active = $3, updated_at = now()
+		WHERE id = $4`,
+		email, color, active, id); err != nil {
+		s.logger.Error("update member account", "error", err)
+		writeError(w, http.StatusInternalServerError, "Could not update member")
+		return
+	}
+	if err := tx.Commit(ctx); err != nil {
+		s.logger.Error("commit update member", "error", err)
+		writeError(w, http.StatusInternalServerError, "Could not update member")
+		return
 	}
 
 	member, err := s.loadMember(ctx, pc.ProjectID, id)
@@ -333,13 +404,22 @@ func (s *Server) handleUpdateMember(w http.ResponseWriter, r *http.Request) {
 func (s *Server) loadMember(ctx context.Context, projectID, id int64) (models.Member, error) {
 	var m models.Member
 	err := s.db.QueryRow(ctx, `
-		SELECT u.id, `+userLabelSQL+`, u.phone, u.email, u.notes, u.avatar_color, u.is_active,
-		       (u.password_hash IS NOT NULL) AS has_password, u.is_public, u.created_at, u.updated_at
+		SELECT u.id, `+memberLabel("u")+`,
+		       COALESCE(NULLIF(pm.phone, ''), u.phone),
+		       COALESCE(NULLIF(pm.notes, ''), u.notes),
+		       u.email, u.avatar_color, u.is_active,
+		       (u.password_hash IS NOT NULL) AS has_password, u.is_public,
+		       pm.name, pm.phone, pm.notes,
+		       `+userLabel("u")+`, u.phone, u.notes,
+		       u.created_at, u.updated_at
 		FROM users u
 		JOIN project_members pm ON pm.user_id = u.id AND pm.project_id = $2
 		WHERE u.id = $1`, id, projectID,
-	).Scan(&m.ID, &m.Name, &m.Phone, &m.Email, &m.Notes, &m.AvatarColor,
-		&m.IsActive, &m.HasPassword, &m.IsPublic, &m.CreatedAt, &m.UpdatedAt)
+	).Scan(&m.ID, &m.Name, &m.Phone, &m.Notes, &m.Email, &m.AvatarColor,
+		&m.IsActive, &m.HasPassword, &m.IsPublic,
+		&m.ProjectName, &m.ProjectPhone, &m.ProjectNotes,
+		&m.ProfileName, &m.ProfilePhone, &m.ProfileNotes,
+		&m.CreatedAt, &m.UpdatedAt)
 	if err != nil {
 		return models.Member{}, err
 	}
@@ -365,24 +445,20 @@ func (s *Server) loadMember(ctx context.Context, projectID, id int64) (models.Me
 	return m, rows.Err()
 }
 
-func validateMemberFields(name, phone, email, notes string) (string, error) {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return "", errors.New("Name is required")
-	}
-	if len([]rune(name)) > 120 {
-		return "", errors.New("Name must be 120 characters or fewer")
+func validateMemberFields(name, phone, email, notes string) error {
+	if len([]rune(strings.TrimSpace(name))) > 120 {
+		return errors.New("Name must be 120 characters or fewer")
 	}
 	if len([]rune(strings.TrimSpace(phone))) > 40 {
-		return "", errors.New("Phone must be 40 characters or fewer")
+		return errors.New("Phone must be 40 characters or fewer")
 	}
 	if err := validateEmail(strings.TrimSpace(email)); err != nil {
-		return "", err
+		return err
 	}
 	if len([]rune(strings.TrimSpace(notes))) > 2000 {
-		return "", errors.New("Notes must be 2000 characters or fewer")
+		return errors.New("Notes must be 2000 characters or fewer")
 	}
-	return name, nil
+	return nil
 }
 
 func validateEmail(email string) error {

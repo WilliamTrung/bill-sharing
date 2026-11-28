@@ -244,12 +244,12 @@ func (s *Server) handleListProjectMembers(w http.ResponseWriter, r *http.Request
 // loadProjectMembers is the roster query used by the membership screen.
 func (s *Server) loadProjectMembers(ctx context.Context, projectID int64) ([]models.ProjectMember, error) {
 	rows, err := s.db.Query(ctx, `
-		SELECT u.id, `+userLabelSQL+`, u.email, pm.role, u.is_active,
+		SELECT u.id, `+memberLabel("u")+`, u.email, pm.role, u.is_active,
 		       (u.password_hash IS NOT NULL) AS has_password
 		FROM project_members pm
 		JOIN users u ON u.id = pm.user_id
 		WHERE pm.project_id = $1
-		ORDER BY (pm.role = 'owner') DESC, u.is_active DESC, `+userLabelSQL+` ASC`, projectID)
+		ORDER BY (pm.role = 'owner') DESC, u.is_active DESC, `+memberLabel("u")+` ASC`, projectID)
 	if err != nil {
 		return nil, fmt.Errorf("list project members: %w", err)
 	}
@@ -293,20 +293,23 @@ func (s *Server) handleAddProjectMember(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	name := strings.TrimSpace(in.Name)
-	if name == "" {
-		// Default the display name to the email local part, as requested.
+	// The name in the body is this project's nickname. It may be omitted, in
+	// which case the membership inherits the account's global display name; a
+	// brand-new account still gets a display name so invites/session have a label.
+	projectName := strings.TrimSpace(in.Name)
+	bootstrapName := projectName
+	if bootstrapName == "" {
 		if at := strings.Index(email, "@"); at > 0 {
-			name = email[:at]
+			bootstrapName = email[:at]
 		}
 	}
-	if len([]rune(name)) > 120 {
+	if len([]rune(projectName)) > 120 {
 		writeError(w, http.StatusBadRequest, "Name must be 120 characters or fewer")
 		return
 	}
 
 	ctx := r.Context()
-	userID, created, err := s.findOrCreateUser(ctx, name, email)
+	userID, created, err := s.findOrCreateUser(ctx, bootstrapName, email)
 	if err != nil {
 		s.logger.Error("find or create user", "error", err)
 		writeError(w, http.StatusInternalServerError, "Could not add member")
@@ -315,8 +318,8 @@ func (s *Server) handleAddProjectMember(w http.ResponseWriter, r *http.Request) 
 
 	// Ensure membership. A conflict means they were already in the project.
 	tag, err := s.db.Exec(ctx, `
-		INSERT INTO project_members (project_id, user_id, role) VALUES ($1, $2, 'member')
-		ON CONFLICT (project_id, user_id) DO NOTHING`, pc.ProjectID, userID)
+		INSERT INTO project_members (project_id, user_id, role, name) VALUES ($1, $2, 'member', $3)
+		ON CONFLICT (project_id, user_id) DO NOTHING`, pc.ProjectID, userID, projectName)
 	if err != nil {
 		s.logger.Error("add project member", "error", err)
 		writeError(w, http.StatusInternalServerError, "Could not add member")
@@ -340,15 +343,19 @@ func (s *Server) handleAddProjectMember(w http.ResponseWriter, r *http.Request) 
 
 	// A brand-new account needs to set a password before it can sign in; an
 	// existing account is simply told it was added.
+	displayName := projectName
+	if displayName == "" {
+		displayName = bootstrapName
+	}
 	if created && s.mailer.Enabled() {
-		s.sendInvite(name, email, userID, pc.ProjectID)
+		s.sendInvite(displayName, email, userID, pc.ProjectID)
 	}
 
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"user_id": userID,
 		"created": created,
 		"invited": created && s.mailer.Enabled(),
-		"name":    name,
+		"name":    displayName,
 		"email":   email,
 		"role":    "member",
 		"project": project.Name,

@@ -57,6 +57,13 @@ CREATE TABLE IF NOT EXISTS project_members (
 
 CREATE INDEX IF NOT EXISTS idx_project_members_user ON project_members (user_id);
 
+-- Per-project member data. These override the account's global profile inside
+-- this project only; an empty value falls back to the global profile (or, for
+-- the name, the username). Email stays on users: it is the global identity.
+ALTER TABLE project_members ADD COLUMN IF NOT EXISTS name  TEXT NOT NULL DEFAULT '';
+ALTER TABLE project_members ADD COLUMN IF NOT EXISTS phone TEXT NOT NULL DEFAULT '';
+ALTER TABLE project_members ADD COLUMN IF NOT EXISTS notes TEXT NOT NULL DEFAULT '';
+
 CREATE TABLE IF NOT EXISTS member_groups (
     id BIGSERIAL PRIMARY KEY,
     name TEXT NOT NULL,

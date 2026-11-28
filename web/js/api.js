@@ -133,13 +133,15 @@ const API = (() => {
       return request("GET", "/api/profile");
     },
 
-    updateProfile(displayName, username, email, language, isPublic) {
+    updateProfile(displayName, username, email, language, isPublic, phone, notes) {
       return request("PUT", "/api/profile", {
         display_name: displayName,
         username,
         email,
         language,
         is_public: isPublic === true,
+        phone: phone || "",
+        notes: notes || "",
       });
     },
 

@@ -193,15 +193,22 @@
     return Number.isInteger(number) ? String(number) : number.toFixed(2).replace(/\.?0+$/, "");
   }
 
+  // setInheritable fills a project-level field with its raw override (empty when
+  // the member inherits) and hints the profile value an empty field falls back to.
+  function setInheritableField(input, rawValue, fallbackValue) {
+    input.value = rawValue || "";
+    input.placeholder = fallbackValue ? I18n.t("admin.inheritHint", { value: fallbackValue }) : "";
+  }
+
   function openMemberModal(member) {
     state.editingMemberId = member ? member.id : null;
     memberModalTitle.textContent = I18n.t(member ? "admin.editMemberTitle" : "admin.addMemberTitle");
     memberFormError.classList.add("hidden");
 
-    memberForm.elements.name.value = member ? member.name : "";
-    memberForm.elements.phone.value = member ? member.phone || "" : "";
+    setInheritableField(memberForm.elements.name, member && member.project_name, member && member.profile_name);
+    setInheritableField(memberForm.elements.phone, member && member.project_phone, member && member.profile_phone);
     memberForm.elements.email.value = member ? member.email || "" : "";
-    memberForm.elements.notes.value = member ? member.notes || "" : "";
+    setInheritableField(memberForm.elements.notes, member && member.project_notes, member && member.profile_notes);
     document.getElementById("m-active").checked = member ? member.is_active : true;
 
     memberModal.classList.add("open");
@@ -222,11 +229,6 @@
       notes: memberForm.elements.notes.value.trim(),
       is_active: document.getElementById("m-active").checked,
     };
-    if (!payload.name) {
-      memberFormError.textContent = I18n.t("admin.errNameRequired");
-      memberFormError.classList.remove("hidden");
-      return;
-    }
 
     const saveBtn = document.getElementById("member-save");
     saveBtn.disabled = true;

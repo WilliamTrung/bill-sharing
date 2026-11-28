@@ -47,6 +47,16 @@
               <div class="hint" data-i18n="profile.displayNameHint">Shown on bills, balances and the members list.</div>
             </div>
             <div class="field">
+              <label for="p-phone" data-i18n="profile.phone">Phone</label>
+              <input id="p-phone" name="phone" type="text" maxlength="40" autocomplete="tel" />
+              <div class="hint" data-i18n="profile.phoneHint">Used in projects where you have no project-specific phone.</div>
+            </div>
+            <div class="field">
+              <label for="p-notes" data-i18n="profile.notes">Notes</label>
+              <textarea id="p-notes" name="notes" maxlength="2000"></textarea>
+              <div class="hint" data-i18n="profile.notesHint">A default note that projects can inherit.</div>
+            </div>
+            <div class="field">
               <label for="p-username" data-i18n="profile.username">Username</label>
               <input id="p-username" name="username" type="text" maxlength="60" required autocomplete="username" />
               <div class="hint" data-i18n="profile.usernameHint">You can sign in with this or your email.</div>

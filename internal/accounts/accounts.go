@@ -87,10 +87,12 @@ func GetUser(ctx context.Context, pool *pgxpool.Pool, userID int64) (models.User
 		SELECT `+userColumns+` FROM users WHERE id = $1`, userID))
 }
 
-func UpdateProfile(ctx context.Context, pool *pgxpool.Pool, userID int64, displayName, username, email, language string, isPublic bool) (models.User, error) {
+func UpdateProfile(ctx context.Context, pool *pgxpool.Pool, userID int64, displayName, username, email, language, phone, notes string, isPublic bool) (models.User, error) {
 	displayName = strings.TrimSpace(displayName)
 	username = strings.TrimSpace(username)
 	email = strings.TrimSpace(email)
+	phone = strings.TrimSpace(phone)
+	notes = strings.TrimSpace(notes)
 
 	tx, err := pool.Begin(ctx)
 	if err != nil {
@@ -117,10 +119,10 @@ func UpdateProfile(ctx context.Context, pool *pgxpool.Pool, userID int64, displa
 
 	user, err := scanUser(tx.QueryRow(ctx, `
 		UPDATE users SET display_name = $1, username = $2, email = $3, language = $4,
-		                 is_public = $5, updated_at = now()
-		WHERE id = $6
+		                 is_public = $5, phone = $6, notes = $7, updated_at = now()
+		WHERE id = $8
 		RETURNING `+userColumns,
-		displayName, username, email, language, isPublic, userID,
+		displayName, username, email, language, isPublic, phone, notes, userID,
 	))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return models.User{}, err

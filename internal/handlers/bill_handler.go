@@ -375,7 +375,7 @@ func (s *Server) loadMemberRefs(ctx context.Context, projectID int64, ids []int6
 	// Joining project_members means a user from another project is simply not
 	// found, so it falls through to the "does not exist" error below.
 	rows, err := s.db.Query(ctx, `
-		SELECT u.id, `+userLabelSQL+` AS name, u.is_active
+		SELECT u.id, `+memberLabel("u")+` AS name, u.is_active
 		FROM users u
 		JOIN project_members pm ON pm.user_id = u.id AND pm.project_id = $2
 		WHERE u.id = ANY($1)`, ids, projectID)
@@ -443,13 +443,13 @@ func (s *Server) loadResolvedGroups(ctx context.Context, projectID int64, ids []
 	// Both sides are scoped: the group must belong to the project, and so must
 	// every member pulled out of it.
 	memberRows, err := s.db.Query(ctx, `
-		SELECT gm.group_id, gm.member_id, `+userLabelSQLM+`, gm.internal_ratio, m.is_active
+		SELECT gm.group_id, gm.member_id, `+memberLabel("m")+`, gm.internal_ratio, m.is_active
 		FROM group_members gm
 		JOIN member_groups g ON g.id = gm.group_id AND g.project_id = $2
 		JOIN users m ON m.id = gm.member_id
 		JOIN project_members pm ON pm.user_id = m.id AND pm.project_id = $2
 		WHERE gm.group_id = ANY($1)
-		ORDER BY `+userLabelSQLM+` ASC`, ids, projectID)
+		ORDER BY `+memberLabel("m")+` ASC`, ids, projectID)
 	if err != nil {
 		return nil, fmt.Errorf("load group members: %w", err)
 	}
@@ -641,12 +641,13 @@ func randomFilename() string {
 func (s *Server) handleListBills(w http.ResponseWriter, r *http.Request) {
 	pc, _ := projectFrom(r.Context())
 	rows, err := s.db.Query(r.Context(), `
-		SELECT b.id, b.title, b.description, b.total_amount_cents, b.paid_by_member_id, `+userLabelSQLM+`,
+		SELECT b.id, b.title, b.description, b.total_amount_cents, b.paid_by_member_id, `+memberLabel("m")+`,
 		       b.split_mode, b.status, b.bill_date, b.created_at,
 		       (SELECT COUNT(*) FROM bill_attachments a WHERE a.bill_id = b.id),
 		       (SELECT COUNT(*) FROM bill_participants p WHERE p.bill_id = b.id)
 		FROM bills b
 		JOIN users m ON m.id = b.paid_by_member_id
+		LEFT JOIN project_members pm ON pm.project_id = b.project_id AND pm.user_id = m.id
 		WHERE b.project_id = $1
 		ORDER BY b.bill_date DESC, b.id DESC`, pc.ProjectID)
 	if err != nil {
@@ -680,12 +681,13 @@ func (s *Server) handleListBills(w http.ResponseWriter, r *http.Request) {
 
 	if len(ids) > 0 {
 		shareRows, err := s.db.Query(r.Context(), `
-			SELECT s.bill_id, s.id, s.member_id, `+userLabelSQLM+`, s.owed_amount_cents,
+			SELECT s.bill_id, s.id, s.member_id, `+memberLabel("m")+`, s.owed_amount_cents,
 			       s.is_settled, s.settle_requested_at IS NOT NULL,
 			       (b.paid_by_member_id = s.member_id) AS is_payer
 			FROM bill_member_shares s
 			JOIN users m ON m.id = s.member_id
 			JOIN bills b ON b.id = s.bill_id
+			LEFT JOIN project_members pm ON pm.project_id = b.project_id AND pm.user_id = m.id
 			WHERE s.bill_id = ANY($1) AND b.project_id = $2
 			ORDER BY s.id`, ids, pc.ProjectID)
 		if err != nil {
@@ -778,12 +780,13 @@ func (s *Server) handlePublicListBills(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	rows, err := s.db.Query(ctx, `
-		SELECT b.id, b.title, b.description, b.total_amount_cents, `+userLabelSQLM+`,
+		SELECT b.id, b.title, b.description, b.total_amount_cents, `+memberLabel("m")+`,
 		       b.split_mode, b.status, b.bill_date,
 		       (SELECT COUNT(*) FROM bill_attachments a WHERE a.bill_id = b.id),
 		       (SELECT COUNT(*) FROM bill_participants p WHERE p.bill_id = b.id)
 		FROM bills b
 		JOIN users m ON m.id = b.paid_by_member_id
+		LEFT JOIN project_members pm ON pm.project_id = b.project_id AND pm.user_id = m.id
 		WHERE b.project_id = $1
 		ORDER BY b.bill_date DESC, b.id DESC`, projectID)
 	if err != nil {
@@ -819,11 +822,13 @@ func (s *Server) handlePublicListBills(w http.ResponseWriter, r *http.Request) {
 	}
 
 	memberRows, err := s.db.Query(ctx, `
-		SELECT s.bill_id, `+userLabelSQLM+`
+		SELECT s.bill_id, `+memberLabel("m")+`
 		FROM bill_member_shares s
 		JOIN users m ON m.id = s.member_id
+		JOIN bills b ON b.id = s.bill_id
+		LEFT JOIN project_members pm ON pm.project_id = b.project_id AND pm.user_id = m.id
 		WHERE s.bill_id = ANY($1)
-		ORDER BY `+userLabelSQLM+` ASC`, ids)
+		ORDER BY `+memberLabel("m")+` ASC`, ids)
 	if err != nil {
 		s.logger.Error("list public bill members", "error", err)
 		writeError(w, http.StatusInternalServerError, "Could not load bills")
@@ -1138,12 +1143,13 @@ func (s *Server) loadBill(ctx context.Context, projectID, id int64) (models.Bill
 	var bill models.Bill
 	var billDate time.Time
 	err := s.db.QueryRow(ctx, `
-		SELECT b.id, b.title, b.description, b.total_amount_cents, b.paid_by_member_id, `+userLabelSQLM+`,
+		SELECT b.id, b.title, b.description, b.total_amount_cents, b.paid_by_member_id, `+memberLabel("m")+`,
 		       b.split_mode, b.status, b.bill_date, b.created_at,
 		       (SELECT COUNT(*) FROM bill_attachments a WHERE a.bill_id = b.id),
 		       (SELECT COUNT(*) FROM bill_participants p WHERE p.bill_id = b.id)
 		FROM bills b
 		JOIN users m ON m.id = b.paid_by_member_id
+		LEFT JOIN project_members pm ON pm.project_id = b.project_id AND pm.user_id = m.id
 		WHERE b.id = $1 AND b.project_id = $2`, id, projectID,
 	).Scan(&bill.ID, &bill.Title, &bill.Description, &bill.TotalAmountCents,
 		&bill.PaidByMemberID, &bill.PaidByName, &bill.SplitMode, &bill.Status, &billDate, &bill.CreatedAt,
@@ -1158,12 +1164,13 @@ func (s *Server) loadBill(ctx context.Context, projectID, id int64) (models.Bill
 
 	participantRows, err := s.db.Query(ctx, `
 		SELECT p.id, p.participant_type, p.member_id, p.group_id,
-		       COALESCE(`+userLabelSQLM+`, g.name, ''), p.note, p.ratio_weight, p.allocated_amount_cents
+		       COALESCE(`+memberLabel("m")+`, g.name, ''), p.note, p.ratio_weight, p.allocated_amount_cents
 		FROM bill_participants p
 		LEFT JOIN users m ON m.id = p.member_id
+		LEFT JOIN project_members pm ON pm.user_id = m.id AND pm.project_id = $2
 		LEFT JOIN member_groups g ON g.id = p.group_id
 		WHERE p.bill_id = $1
-		ORDER BY p.id`, id)
+		ORDER BY p.id`, id, projectID)
 	if err != nil {
 		return models.Bill{}, err
 	}
@@ -1185,12 +1192,13 @@ func (s *Server) loadBill(ctx context.Context, projectID, id int64) (models.Bill
 	}
 
 	shareRows, err := s.db.Query(ctx, `
-		SELECT s.id, s.member_id, `+userLabelSQLM+`, s.source_group_id, s.owed_amount_cents,
+		SELECT s.id, s.member_id, `+memberLabel("m")+`, s.source_group_id, s.owed_amount_cents,
 		       s.is_settled, s.settle_requested_at
 		FROM bill_member_shares s
 		JOIN users m ON m.id = s.member_id
+		LEFT JOIN project_members pm ON pm.user_id = m.id AND pm.project_id = $2
 		WHERE s.bill_id = $1
-		ORDER BY s.id`, id)
+		ORDER BY s.id`, id, projectID)
 	if err != nil {
 		return models.Bill{}, err
 	}
@@ -1273,7 +1281,7 @@ func (s *Server) handleSettlements(w http.ResponseWriter, r *http.Request) {
 		SELECT s.id, b.id, b.title, b.bill_date, b.status, s.owed_amount_cents, s.is_settled,
 		       s.settle_requested_at IS NOT NULL,
 		       CASE WHEN s.member_id = $1 THEN 'debtor' ELSE 'payer' END AS role,
-		       `+userLabelSQLM+` AS debtor_name,
+		       `+memberLabel("m")+` AS debtor_name,
 		       COALESCE((
 		           SELECT p.note FROM bill_participants p
 		           WHERE p.bill_id = b.id AND p.participant_type = 'MEMBER' AND p.member_id = s.member_id
@@ -1282,6 +1290,7 @@ func (s *Server) handleSettlements(w http.ResponseWriter, r *http.Request) {
 		FROM bill_member_shares s
 		JOIN bills b ON b.id = s.bill_id
 		JOIN users m ON m.id = s.member_id
+		LEFT JOIN project_members pm ON pm.project_id = b.project_id AND pm.user_id = m.id
 		WHERE ((s.member_id = $1 AND s.is_settled = FALSE)
 		   OR (b.paid_by_member_id = $1 AND s.member_id <> $1 AND s.is_settled = FALSE))
 		  AND b.status <> 'SETTLED'
@@ -1317,12 +1326,13 @@ func (s *Server) handleSettlements(w http.ResponseWriter, r *http.Request) {
 	if len(billIDs) > 0 {
 		// One query for every participant across the listed bills.
 		shareRows, err := s.db.Query(ctx, `
-			SELECT s.bill_id, s.id, s.member_id, `+userLabelSQLM+`, s.owed_amount_cents,
+			SELECT s.bill_id, s.id, s.member_id, `+memberLabel("m")+`, s.owed_amount_cents,
 			       s.is_settled, s.settle_requested_at IS NOT NULL,
 			       (b.paid_by_member_id = s.member_id) AS is_payer
 			FROM bill_member_shares s
 			JOIN users m ON m.id = s.member_id
 			JOIN bills b ON b.id = s.bill_id
+			LEFT JOIN project_members pm ON pm.project_id = b.project_id AND pm.user_id = m.id
 			WHERE s.bill_id = ANY($1) AND b.project_id = $2
 			ORDER BY s.id`, billIDs, pc.ProjectID)
 		if err != nil {
@@ -1372,7 +1382,7 @@ func (s *Server) handleBalances(w http.ResponseWriter, r *http.Request) {
 	// The roster, the credit and the debt subqueries each need the project
 	// predicate: missing the roster leaks names, missing a subquery fakes money.
 	rows, err := s.db.Query(r.Context(), `
-		SELECT m.id, `+userLabelSQLM+`, m.is_active, (m.id = $1) AS is_self,
+		SELECT m.id, `+memberLabel("m")+`, m.is_active, (m.id = $1) AS is_self,
 		       COALESCE(credit.total, 0)::bigint,
 		       COALESCE(debt.total, 0)::bigint,
 		       (COALESCE(credit.total, 0) - COALESCE(debt.total, 0))::bigint
@@ -1396,7 +1406,7 @@ func (s *Server) handleBalances(w http.ResponseWriter, r *http.Request) {
 			  AND s.member_id <> b.paid_by_member_id
 			GROUP BY s.member_id
 		) debt ON debt.member_id = m.id
-		ORDER BY `+userLabelSQLM+` ASC`, viewerID, pc.ProjectID)
+		ORDER BY `+memberLabel("m")+` ASC`, viewerID, pc.ProjectID)
 	if err != nil {
 		s.logger.Error("load balances", "error", err)
 		writeError(w, http.StatusInternalServerError, "Could not load balances")

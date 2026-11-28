@@ -1,6 +1,8 @@
 (() => {
   const profileForm = document.getElementById("profile-form");
   const displayName = document.getElementById("p-display-name");
+  const phone = document.getElementById("p-phone");
+  const notes = document.getElementById("p-notes");
   const username = document.getElementById("p-username");
   const email = document.getElementById("p-email");
   const language = document.getElementById("p-language");
@@ -28,6 +30,8 @@
 
   function fillForm(profile) {
     displayName.value = profile.display_name || "";
+    phone.value = profile.phone || "";
+    notes.value = profile.notes || "";
     username.value = profile.username || "";
     email.value = profile.email || "";
     language.value = profile.language === "vi" ? "vi" : "en";
@@ -57,7 +61,15 @@
     profileSubmit.disabled = true;
     profileSubmit.textContent = I18n.t("profile.saving");
     try {
-      const profile = await API.updateProfile(name, user, mail, language.value, isPublic.checked);
+      const profile = await API.updateProfile(
+        name,
+        user,
+        mail,
+        language.value,
+        isPublic.checked,
+        phone.value.trim(),
+        notes.value.trim()
+      );
       fillForm(profile);
       I18n.useDefault(profile.language);
       UI.toast(I18n.t("profile.saved"), "success");
